@@ -53,8 +53,8 @@ upstream package).
 | `src/api/anthropic-messages.ts` | `src/ai/api/anthropic_messages.rs` | done |
 | `src/api/azure-openai-responses.lazy.ts` | `src/ai/providers/apis.rs` | done |
 | `src/api/azure-openai-responses.ts` | `src/ai/api/azure_openai_responses.rs` | done |
-| `src/api/bedrock-converse-stream.lazy.ts` | | pending |
-| `src/api/bedrock-converse-stream.ts` | `src/ai/api/bedrock_converse_stream.rs` | partial (request building, event handling, and the SDK-mock seam ported with their tests; the SigV4/bearer wire transport and event-stream framing land next) |
+| `src/api/bedrock-converse-stream.lazy.ts` | `src/ai/providers/apis.rs` | done (direct dispatch adapter; the Bun `setBedrockProviderModule` override has no Rust counterpart) |
+| `src/api/bedrock-converse-stream.ts` | `src/ai/api/bedrock_converse_stream.rs` | done (SigV4 with the documented AWS vector, bearer/skip-auth/static/profile credential resolution, endpoint+region resolution, vnd.amazon.eventstream framing; web-identity (IRSA) and ECS credential fetching are not implemented — the provider reports them configured but the wire layer lacks the STS/container fetch, to be revisited) |
 | `src/api/cloudflare-gateway-binding.ts` | `src/ai/api/cloudflare_gateway_binding.rs` | done (Request/init split and fetch-signal forwarding have no Rust transport equivalent; documented in the module) |
 | `src/api/cloudflare.ts` | `src/ai/api/cloudflare.rs` | done |
 | `src/api/constrained-sampling.ts` | `src/ai/api/constrained-sampling.rs` | done |
@@ -252,13 +252,13 @@ upstream package).
 | `test/baseten-models.test.ts` | | pending |
 | `test/bedrock-convert-messages.test.ts` | `tests/ai_bedrock_stream.rs` | done (the two unknown-content-block cases are N/A: Rust's closed content enums cannot carry unknown block types) |
 | `test/bedrock-credentials.test.ts` | | pending |
-| `test/bedrock-custom-headers.test.ts` | | pending |
-| `test/bedrock-endpoint-resolution.test.ts` | | pending |
+| `test/bedrock-custom-headers.test.ts` | inline in `src/ai/api/bedrock_converse_stream.rs` | done (middleware apply behavior observed on the outgoing header list; the SDK step/priority/name registration mechanics are N/A) |
+| `test/bedrock-endpoint-resolution.test.ts` | inline in `src/ai/api/bedrock_converse_stream.rs` | done (observed on the resolved dispatch config instead of the SDK constructor) |
 | `test/bedrock-error-metadata.test.ts` | `tests/ai_bedrock_stream.rs` | done |
 | `test/bedrock-models.test.ts` | | pending |
 | `test/bedrock-raw-stop-reason.test.ts` | `tests/ai_bedrock_stream.rs` | done |
 | `test/bedrock-redacted-reasoning.test.ts` | `tests/ai_bedrock_stream.rs` | done |
-| `test/bedrock-response-headers.test.ts` | | pending |
+| `test/bedrock-response-headers.test.ts` | `tests/ai_bedrock_stream.rs` | done (local HTTP server) |
 | `test/bedrock-thinking-payload.test.ts` | `tests/ai_bedrock_stream.rs` | done (credentials-gated E2E case skips like the TS `describe.skipIf`; payload captured via onPayload with an aborted signal instead of a thrown capture) |
 | `test/bedrock-utils.ts` | | pending |
 | `test/cache-retention.test.ts` | | pending |

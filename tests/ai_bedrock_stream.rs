@@ -29,6 +29,7 @@ fn empty_items() -> BedrockDispatchResponse {
     BedrockDispatchResponse {
         http_status_code: Some(200),
         request_id: Some("request-id".to_string()),
+        raw_headers: None,
         items: Vec::new(),
         send_error: None,
         stream_error: None,
@@ -698,6 +699,7 @@ fn failing_stream(thrown: BedrockError) -> BedrockDispatchResponse {
     BedrockDispatchResponse {
         http_status_code: Some(200),
         request_id: Some(REQUEST_ID.to_string()),
+        raw_headers: None,
         items: vec![json!({ "messageStart": { "role": "assistant" } })],
         send_error: None,
         stream_error: Some(thrown),
@@ -1021,4 +1023,202 @@ async fn replaces_user_messages_with_only_unknown_or_blank_content_with_a_placeh
     };
     let messages = converted_messages(context, &model).await;
     assert_eq!(messages[0]["content"], json!([{ "text": "hello" }]));
+}
+
+// ---------------------------------------------------------------------------
+// Wire transport: response headers forwarded to onResponse
+// (bedrock-response-headers.test.ts drives a local HTTP server with
+// AWS_BEDROCK_SKIP_AUTH=1).
+
+#[tokio::test]
+async fn forwards_raw_response_headers_to_on_response() {
+    use pi_core::ai::api::bedrock_converse_stream::stream as stream_bedrock;
+
+    const MODEL_ID: &str = "us.anthropic.claude-haiku-4-5-20251001-v1:0";
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        use tokio::io::AsyncWriteExt;
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut buffer = [0u8; 8192];
+        use tokio::io::AsyncReadExt;
+        let _ = socket.read(&mut buffer).await;
+        let response = format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/vnd.amazon.eventstream\r\n\
+             x-bifrost-provider: bedrock\r\nx-bifrost-resolved-model: {MODEL_ID}\r\n\
+             x-amzn-requestid: req-123\r\ncontent-length: 0\r\n\r\n"
+        );
+        socket.write_all(response.as_bytes()).await.unwrap();
+    });
+
+    let mut model = base_model(MODEL_ID);
+    model.base_url = format!("http://{addr}");
+    let responses: Arc<Mutex<Vec<pi_core::ai::types::ProviderResponse>>> =
+        Arc::new(Mutex::new(Vec::new()));
+    let on_response: pi_core::ai::types::OnResponseCallback = {
+        let responses = Arc::clone(&responses);
+        Arc::new(
+            move |response: &pi_core::ai::types::ProviderResponse, _model| {
+                let response = response.clone();
+                let responses = Arc::clone(&responses);
+                Box::pin(async move {
+                    responses.lock().unwrap().push(response);
+                })
+            },
+        )
+    };
+    let mut env = serde_json::Map::new();
+    env.insert("AWS_BEDROCK_SKIP_AUTH".to_string(), serde_json::json!("1"));
+    let env: pi_core::ai::types::ProviderEnv = env
+        .into_iter()
+        .map(|(key, value)| (key, value.as_str().unwrap_or_default().to_string()))
+        .collect();
+
+    let result = stream_bedrock(
+        &model,
+        &Context {
+            messages: vec![user_message("hello")],
+            ..Default::default()
+        },
+        Some(&BedrockOptions {
+            base: StreamOptions {
+                base: ProviderRequestOptions {
+                    env: Some(env),
+                    on_response: Some(on_response),
+                    ..Default::default()
+                },
+                cache_retention: Some(CacheRetention::None),
+                ..Default::default()
+            },
+            ..Default::default()
+        }),
+    )
+    .result()
+    .await;
+    server.await.unwrap();
+
+    // The fake server returns an empty event stream; the header callback
+    // still fires before stream consumption.
+    assert_eq!(result.stop_reason, StopReason::Error);
+    let responses = responses.lock().unwrap();
+    assert_eq!(responses.len(), 1);
+    assert_eq!(responses[0].status, 200);
+    assert_eq!(
+        responses[0]
+            .headers
+            .get("x-amzn-requestid")
+            .map(String::as_str),
+        Some("req-123")
+    );
+    assert_eq!(
+        responses[0]
+            .headers
+            .get("x-bifrost-provider")
+            .map(String::as_str),
+        Some("bedrock")
+    );
+    assert_eq!(
+        responses[0]
+            .headers
+            .get("x-bifrost-resolved-model")
+            .map(String::as_str),
+        Some(MODEL_ID)
+    );
+}
+
+#[tokio::test]
+async fn wire_stream_decodes_framed_events_end_to_end() {
+    use pi_core::ai::api::bedrock_converse_stream::stream as stream_bedrock;
+
+    // A scripted transport speaking the event-stream wire format.
+    struct FramedFetch;
+    impl pi_core::ai::utils::http::HttpFetch for FramedFetch {
+        fn fetch<'a>(
+            &'a self,
+            _request: pi_core::ai::utils::http::HttpRequest,
+        ) -> futures::future::BoxFuture<
+            'a,
+            Result<
+                pi_core::ai::utils::http::HttpResponse,
+                pi_core::ai::utils::http::HttpFetchError,
+            >,
+        > {
+            fn encode_frame(headers: &[(&str, &str)], payload: &[u8]) -> Vec<u8> {
+                let mut header_bytes = Vec::new();
+                for (name, value) in headers {
+                    header_bytes.push(name.len() as u8);
+                    header_bytes.extend_from_slice(name.as_bytes());
+                    header_bytes.push(7);
+                    header_bytes.extend_from_slice(&(value.len() as u16).to_be_bytes());
+                    header_bytes.extend_from_slice(value.as_bytes());
+                }
+                let total = 12 + header_bytes.len() + payload.len() + 4;
+                let mut frame = Vec::new();
+                frame.extend_from_slice(&(total as u32).to_be_bytes());
+                frame.extend_from_slice(&(header_bytes.len() as u32).to_be_bytes());
+                frame.extend_from_slice(&[0, 0, 0, 0]);
+                frame.extend_from_slice(&header_bytes);
+                frame.extend_from_slice(payload);
+                frame.extend_from_slice(&[0, 0, 0, 0]);
+                frame
+            }
+            let body = [
+                encode_frame(
+                    &[(":message-type", "event")],
+                    br#"{"messageStart":{"role":"assistant"}}"#,
+                ),
+                encode_frame(
+                    &[(":message-type", "event")],
+                    br#"{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"hi"}}}"#,
+                ),
+                encode_frame(
+                    &[(":message-type", "event")],
+                    br#"{"messageStop":{"stopReason":"end_turn"}}"#,
+                ),
+            ]
+            .concat();
+            Box::pin(async move {
+                Ok(pi_core::ai::utils::http::HttpResponse {
+                    status: 200,
+                    headers: vec![(
+                        "content-type".to_string(),
+                        "application/vnd.amazon.eventstream".to_string(),
+                    )],
+                    body: Box::pin(futures::stream::iter(vec![Ok(bytes::Bytes::from(body))])),
+                })
+            })
+        }
+    }
+
+    let model = base_model("us.anthropic.claude-opus-4-8");
+    let result = stream_bedrock(
+        &model,
+        &Context {
+            messages: vec![user_message("hello")],
+            ..Default::default()
+        },
+        Some(&BedrockOptions {
+            base: StreamOptions {
+                base: ProviderRequestOptions {
+                    api_key: Some("bearer-token".to_string()),
+                    fetch: Some(
+                        Arc::new(FramedFetch) as Arc<dyn pi_core::ai::utils::http::HttpFetch>
+                    ),
+                    ..Default::default()
+                },
+                cache_retention: Some(CacheRetention::None),
+                ..Default::default()
+            },
+            ..Default::default()
+        }),
+    )
+    .result()
+    .await;
+
+    assert_eq!(result.stop_reason, StopReason::Stop);
+    assert_eq!(result.raw_stop_reason.as_deref(), Some("end_turn"));
+    match &result.content[0] {
+        AssistantContent::Text(text) => assert_eq!(text.text, "hi"),
+        other => panic!("expected text, got {other:?}"),
+    }
 }

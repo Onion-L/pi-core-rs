@@ -269,3 +269,36 @@ pub fn openai_codex_responses_api() -> Arc<dyn ProviderStreams> {
 pub fn pi_messages_api() -> Arc<dyn ProviderStreams> {
     Arc::new(PiMessagesApi)
 }
+
+/// Port of `bedrockConverseStreamApi` (the lazy wrapper collapses to direct
+/// dispatch).
+pub fn bedrock_converse_stream_api() -> Arc<dyn ProviderStreams> {
+    struct BedrockConverseStreamApi;
+
+    impl ProviderStreams for BedrockConverseStreamApi {
+        fn stream(
+            &self,
+            model: &Model,
+            context: &Context,
+            options: Option<&StreamOptions>,
+        ) -> AssistantMessageEventStream {
+            let options =
+                options.map(
+                    |options| crate::ai::api::bedrock_converse_stream::BedrockOptions {
+                        base: options.clone(),
+                        ..Default::default()
+                    },
+                );
+            crate::ai::api::bedrock_converse_stream::stream(model, context, options.as_ref())
+        }
+        fn stream_simple(
+            &self,
+            model: &Model,
+            context: &Context,
+            options: Option<&SimpleStreamOptions>,
+        ) -> AssistantMessageEventStream {
+            crate::ai::api::bedrock_converse_stream::stream_simple(model, context, options)
+        }
+    }
+    Arc::new(BedrockConverseStreamApi)
+}

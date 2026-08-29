@@ -95,6 +95,9 @@ impl BedrockError {
 pub struct BedrockDispatchResponse {
     pub http_status_code: Option<u16>,
     pub request_id: Option<String>,
+    /// Raw HTTP response headers (the deserialize-middleware path); absent
+    /// means the synthesized `$metadata` fallback applies.
+    pub raw_headers: Option<BTreeMap<String, String>>,
     pub items: Vec<Value>,
     /// `client.send()` rejecting.
     pub send_error: Option<BedrockError>,
@@ -1297,18 +1300,26 @@ fn drive_stream(
             };
             let response_request_id = normalize_diagnostic_value(response.request_id.as_deref());
             if let Some(on_response) = options.base.base.on_response.clone() {
-                let mut headers = BTreeMap::new();
-                if let Some(request_id) = &response.request_id {
-                    headers.insert("x-amzn-requestid".to_string(), request_id.clone());
-                }
-                on_response(
-                    &crate::ai::types::ProviderResponse {
+                // Raw HTTP headers when the transport observed them (the
+                // deserialize-middleware path); otherwise the synthesized
+                // `$metadata` fallback.
+                let provider_response = match &response.raw_headers {
+                    Some(raw_headers) => crate::ai::types::ProviderResponse {
                         status: response.http_status_code.unwrap_or(200),
-                        headers,
+                        headers: raw_headers.clone(),
                     },
-                    &model,
-                )
-                .await;
+                    None => {
+                        let mut headers = BTreeMap::new();
+                        if let Some(request_id) = &response.request_id {
+                            headers.insert("x-amzn-requestid".to_string(), request_id.clone());
+                        }
+                        crate::ai::types::ProviderResponse {
+                            status: response.http_status_code.unwrap_or(200),
+                            headers,
+                        }
+                    }
+                };
+                on_response(&provider_response, &model).await;
             }
 
             let mut driver = EventDriver {
@@ -1475,6 +1486,73 @@ fn post_loop_checks(
     Ok(())
 }
 
+/// Port of the exported `stream`: dispatches over the wire transport.
+pub fn stream(
+    model: &Model,
+    context: &Context,
+    options: Option<&BedrockOptions>,
+) -> AssistantMessageEventStream {
+    let options = options.cloned().unwrap_or_default();
+    let model_for_dispatch = model.clone();
+    let options_for_dispatch = options.clone();
+    drive_stream(model, context, &options, move |input| {
+        let model = model_for_dispatch;
+        let options = options_for_dispatch;
+        Box::pin(async move { dispatch_wire(&model, &options, input).await })
+    })
+}
+
+/// The `SimpleStreamOptions` → `BedrockOptions` adaptation shared by the
+/// wire and mocked dispatch paths.
+fn adapt_simple_options(
+    model: &Model,
+    context: &Context,
+    options: Option<&SimpleStreamOptions>,
+) -> BedrockOptions {
+    let base = build_base_options(model, context, options, None);
+    let mut bedrock = BedrockOptions {
+        base,
+        tool_choice: options.and_then(|options| options.tool_choice.clone()),
+        ..Default::default()
+    };
+    let Some(reasoning) = options.and_then(|options| options.reasoning) else {
+        return bedrock;
+    };
+    bedrock.reasoning = Some(reasoning);
+    bedrock.thinking_budgets = options.and_then(|options| options.thinking_budgets.clone());
+    if is_anthropic_claude_model(model) && !supports_adaptive_thinking(&model.id, Some(&model.name))
+    {
+        // Budget-based Claude: reserve thinking headroom from the output cap.
+        let adjusted = adjust_max_tokens_for_thinking(
+            bedrock.base.max_tokens,
+            model.max_tokens,
+            reasoning,
+            bedrock.thinking_budgets.as_ref(),
+        );
+        let max_tokens = clamp_max_tokens_to_context(model, context, adjusted.0);
+        bedrock.base.max_tokens = Some(max_tokens);
+        let level = clamp_reasoning(Some(reasoning)).unwrap_or(ThinkingLevel::High);
+        let budget = adjusted.1.min(max_tokens.saturating_sub(1024));
+        let mut budgets = bedrock.thinking_budgets.clone().unwrap_or_default();
+        set_budget(&mut budgets, level, budget);
+        bedrock.thinking_budgets = Some(budgets);
+    }
+    bedrock
+}
+
+/// Port of the exported `streamSimple`.
+pub fn stream_simple(
+    model: &Model,
+    context: &Context,
+    options: Option<&SimpleStreamOptions>,
+) -> AssistantMessageEventStream {
+    stream(
+        model,
+        context,
+        Some(&adapt_simple_options(model, context, options)),
+    )
+}
+
 /// Port of the TS test seam: drive the pipeline from a mocked SDK dispatch
 /// response. This is the surface the TypeScript bedrock tests exercise by
 /// mocking `@aws-sdk/client-bedrock-runtime`.
@@ -1498,34 +1576,7 @@ pub fn stream_simple_from_items(
     options: Option<&SimpleStreamOptions>,
     response: BedrockDispatchResponse,
 ) -> AssistantMessageEventStream {
-    let base = build_base_options(model, context, options, None);
-    let mut bedrock = BedrockOptions {
-        base,
-        tool_choice: options.and_then(|options| options.tool_choice.clone()),
-        ..Default::default()
-    };
-    let Some(reasoning) = options.and_then(|options| options.reasoning) else {
-        return stream_from_items(model, context, Some(&bedrock), response);
-    };
-    bedrock.reasoning = Some(reasoning);
-    bedrock.thinking_budgets = options.and_then(|options| options.thinking_budgets.clone());
-    if is_anthropic_claude_model(model) && !supports_adaptive_thinking(&model.id, Some(&model.name))
-    {
-        // Budget-based Claude: reserve thinking headroom from the output cap.
-        let adjusted = adjust_max_tokens_for_thinking(
-            bedrock.base.max_tokens,
-            model.max_tokens,
-            reasoning,
-            bedrock.thinking_budgets.as_ref(),
-        );
-        let max_tokens = clamp_max_tokens_to_context(model, context, adjusted.0);
-        bedrock.base.max_tokens = Some(max_tokens);
-        let level = clamp_reasoning(Some(reasoning)).unwrap_or(ThinkingLevel::High);
-        let budget = adjusted.1.min(max_tokens.saturating_sub(1024));
-        let mut budgets = bedrock.thinking_budgets.clone().unwrap_or_default();
-        set_budget(&mut budgets, level, budget);
-        bedrock.thinking_budgets = Some(budgets);
-    }
+    let bedrock = adapt_simple_options(model, context, options);
     stream_from_items(model, context, Some(&bedrock), response)
 }
 
@@ -1543,6 +1594,338 @@ fn set_budget(budgets: &mut ThinkingBudgets, level: ThinkingLevel, budget: u64) 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai::types::ProviderRequestOptions;
+
+    // ------------------------------------------------------------------
+    // Endpoint resolution (bedrock-endpoint-resolution.test.ts cases,
+    // observed on the resolved dispatch config instead of the SDK
+    // constructor).
+    //
+    // Ambient env vars leak between tests, so the ambient-profile cases pin
+    // them explicitly per test.
+
+    fn dispatch_config(model: &Model, options: BedrockOptions) -> BedrockDispatchConfig {
+        resolve_dispatch_config(model, &options)
+    }
+
+    fn base_options() -> BedrockOptions {
+        BedrockOptions {
+            base: StreamOptions {
+                cache_retention: Some(CacheRetention::None),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    fn bedrock_model(id: &str) -> Model {
+        crate::ai::providers::builtin::get_builtin_model("amazon-bedrock", id).unwrap()
+    }
+
+    /// Serializes the tests that mutate the process environment.
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+        LOCK.get_or_init(|| std::sync::Mutex::new(()))
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn set_env(name: &str, value: &str) {
+        // SAFETY: each call holds `env_lock` for the whole test.
+        unsafe { std::env::set_var(name, value) }
+    }
+
+    fn remove_env(name: &str) {
+        // SAFETY: each call holds `env_lock` for the whole test.
+        unsafe { std::env::remove_var(name) }
+    }
+
+    #[test]
+    fn assigns_eu_central_1_runtime_urls_to_builtin_eu_inference_profiles() {
+        let model = bedrock_model("eu.anthropic.claude-sonnet-4-5-20250929-v1:0");
+        assert_eq!(
+            model.base_url,
+            "https://bedrock-runtime.eu-central-1.amazonaws.com"
+        );
+    }
+
+    #[test]
+    fn does_not_pin_standard_endpoints_when_region_is_configured() {
+        let _guard = env_lock();
+        set_env("AWS_REGION", "us-east-2");
+        let model = bedrock_model("us.anthropic.claude-opus-4-8");
+        let config = dispatch_config(&model, base_options());
+        remove_env("AWS_REGION");
+        assert_eq!(config.region.as_deref(), Some("us-east-2"));
+        assert_eq!(config.endpoint, None);
+    }
+
+    #[test]
+    fn derives_region_from_a_builtin_eu_endpoint_when_nothing_is_configured() {
+        let _guard = env_lock();
+        remove_env("AWS_REGION");
+        remove_env("AWS_DEFAULT_REGION");
+        remove_env("AWS_PROFILE");
+        let model = bedrock_model("eu.anthropic.claude-sonnet-4-5-20250929-v1:0");
+        let config = dispatch_config(&model, base_options());
+        assert_eq!(
+            config.endpoint.as_deref(),
+            Some("https://bedrock-runtime.eu-central-1.amazonaws.com")
+        );
+        assert_eq!(config.region.as_deref(), Some("eu-central-1"));
+    }
+
+    #[test]
+    fn handles_missing_regions_for_explicit_scoped_and_ambient_profiles() {
+        let _guard = env_lock();
+        remove_env("AWS_REGION");
+        remove_env("AWS_DEFAULT_REGION");
+        remove_env("AWS_PROFILE");
+        let model = bedrock_model("eu.anthropic.claude-sonnet-4-5-20250929-v1:0");
+
+        let options = BedrockOptions {
+            profile: Some("bedrock-profile".to_string()),
+            ..base_options()
+        };
+        let config = dispatch_config(&model, options);
+        assert_eq!(config.profile.as_deref(), Some("bedrock-profile"));
+        assert_eq!(
+            config.endpoint.as_deref(),
+            Some("https://bedrock-runtime.eu-central-1.amazonaws.com")
+        );
+        assert_eq!(config.region.as_deref(), Some("eu-central-1"));
+
+        let mut env = ProviderEnv::new();
+        env.insert(
+            "AWS_PROFILE".to_string(),
+            "scoped-bedrock-profile".to_string(),
+        );
+        let options = BedrockOptions {
+            base: StreamOptions {
+                base: ProviderRequestOptions {
+                    env: Some(env),
+                    ..Default::default()
+                },
+                ..base_options().base
+            },
+            ..base_options()
+        };
+        let config = dispatch_config(&model, options);
+        assert_eq!(config.profile.as_deref(), Some("scoped-bedrock-profile"));
+        assert_eq!(config.region.as_deref(), Some("eu-central-1"));
+
+        set_env("AWS_PROFILE", "ambient-bedrock-profile");
+        let config = dispatch_config(&model, base_options());
+        remove_env("AWS_PROFILE");
+        assert_eq!(config.profile.as_deref(), Some("ambient-bedrock-profile"));
+        assert_eq!(config.endpoint, None);
+        assert_eq!(config.region, None);
+    }
+
+    #[test]
+    fn still_passes_custom_bedrock_endpoints_through() {
+        let _guard = env_lock();
+        set_env("AWS_REGION", "us-west-2");
+        let mut model = bedrock_model("us.anthropic.claude-opus-4-8");
+        model.base_url = "https://bedrock-vpc.example.com".to_string();
+        let config = dispatch_config(&model, base_options());
+        remove_env("AWS_REGION");
+        assert_eq!(
+            config.endpoint.as_deref(),
+            Some("https://bedrock-vpc.example.com")
+        );
+        assert_eq!(config.region.as_deref(), Some("us-west-2"));
+    }
+
+    #[test]
+    fn extracts_region_from_inference_profile_arn_regardless_of_region() {
+        let _guard = env_lock();
+        set_env("AWS_REGION", "us-east-1");
+        let mut model = bedrock_model("us.anthropic.claude-opus-4-8");
+        model.id = "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/abc123"
+            .to_string();
+        let config = dispatch_config(&model, base_options());
+        remove_env("AWS_REGION");
+        assert_eq!(config.region.as_deref(), Some("us-west-2"));
+    }
+
+    #[test]
+    fn extracts_region_from_govcloud_inference_profile_arn() {
+        let _guard = env_lock();
+        set_env("AWS_REGION", "us-east-1");
+        let mut model = bedrock_model("us.anthropic.claude-opus-4-8");
+        model.id =
+            "arn:aws-us-gov:bedrock:us-gov-west-1:123456789012:application-inference-profile/abc123"
+                .to_string();
+        let config = dispatch_config(&model, base_options());
+        remove_env("AWS_REGION");
+        assert_eq!(config.region.as_deref(), Some("us-gov-west-1"));
+    }
+
+    #[test]
+    fn uses_the_generic_api_key_option_as_a_bedrock_bearer_token() {
+        let model = bedrock_model("us.anthropic.claude-opus-4-8");
+        let options = BedrockOptions {
+            base: StreamOptions {
+                base: ProviderRequestOptions {
+                    api_key: Some("bedrock-api-key".to_string()),
+                    ..Default::default()
+                },
+                ..base_options().base
+            },
+            ..base_options()
+        };
+        let config = dispatch_config(&model, options);
+        assert_eq!(config.bearer_token.as_deref(), Some("bedrock-api-key"));
+    }
+
+    // ------------------------------------------------------------------
+    // Custom headers (bedrock-custom-headers.test.ts; the middleware's
+    // apply behavior observed on the outgoing header list).
+
+    fn apply(custom: &[(&str, &str)]) -> Vec<(String, String)> {
+        let mut headers = vec![
+            ("authorization".to_string(), "real-auth".to_string()),
+            ("x-amz-date".to_string(), "real-date".to_string()),
+            ("host".to_string(), "real-host".to_string()),
+        ];
+        let custom: ProviderHeaders = custom
+            .iter()
+            .map(|(name, value)| (name.to_string(), Some(value.to_string())))
+            .collect();
+        apply_custom_headers(&mut headers, &custom);
+        headers
+    }
+
+    #[test]
+    fn injects_the_caller_header() {
+        let headers = apply(&[("x-custom", "v")]);
+        let get = |name: &str| {
+            headers
+                .iter()
+                .find(|(key, _)| key == name)
+                .map(|(_, value)| value.clone())
+        };
+        assert_eq!(get("x-custom").as_deref(), Some("v"));
+        assert_eq!(get("authorization").as_deref(), Some("real-auth"));
+    }
+
+    #[test]
+    fn skips_reserved_headers_case_insensitively_while_applying_allowed_ones() {
+        let headers = apply(&[
+            ("authorization", "evil"),
+            ("x-amz-date", "evil"),
+            ("x-allowed", "ok"),
+            ("Authorization", "evil2"),
+            ("X-Amz-Date", "evil2"),
+            ("HOST", "evil3"),
+        ]);
+        let mut names: Vec<String> = headers.iter().map(|(name, _)| name.clone()).collect();
+        names.sort();
+        assert_eq!(
+            names,
+            vec![
+                "authorization".to_string(),
+                "host".to_string(),
+                "x-allowed".to_string(),
+                "x-amz-date".to_string(),
+            ]
+        );
+        assert_eq!(
+            headers
+                .iter()
+                .find(|(name, _)| name == "x-allowed")
+                .map(|(_, value)| value.clone())
+                .as_deref(),
+            Some("ok")
+        );
+    }
+
+    #[test]
+    fn custom_header_entries_with_null_values_are_dropped() {
+        let mut headers = vec![("x-real".to_string(), "1".to_string())];
+        let mut custom = ProviderHeaders::new();
+        custom.insert("x-suppressed".to_string(), None);
+        apply_custom_headers(&mut headers, &custom);
+        assert_eq!(headers, vec![("x-real".to_string(), "1".to_string())]);
+    }
+
+    // ------------------------------------------------------------------
+    // Event-stream framing.
+
+    /// Minimal encoder mirroring the AWS wire format.
+    fn encode_frame(headers: &[(&str, &str)], payload: &[u8]) -> Vec<u8> {
+        fn put_u16(value: u16, out: &mut Vec<u8>) {
+            out.extend_from_slice(&value.to_be_bytes());
+        }
+        fn put_u32(value: u32, out: &mut Vec<u8>) {
+            out.extend_from_slice(&value.to_be_bytes());
+        }
+        let mut header_bytes = Vec::new();
+        for (name, value) in headers {
+            header_bytes.push(name.len() as u8);
+            header_bytes.extend_from_slice(name.as_bytes());
+            header_bytes.push(7); // string value
+            put_u16(value.len() as u16, &mut header_bytes);
+            header_bytes.extend_from_slice(value.as_bytes());
+        }
+        let mut prelude = Vec::new();
+        let total = 12 + header_bytes.len() + payload.len() + 4;
+        put_u32(total as u32, &mut prelude);
+        put_u32(header_bytes.len() as u32, &mut prelude);
+        put_u32(0, &mut prelude); // prelude CRC (the decoder does not verify)
+        let mut frame = Vec::new();
+        frame.extend_from_slice(&prelude);
+        frame.extend_from_slice(&header_bytes);
+        frame.extend_from_slice(payload);
+        let mut crc = crc32fast::Hasher::new();
+        crc.update(&frame);
+        put_u32(crc.finalize(), &mut frame);
+        frame
+    }
+
+    #[test]
+    fn decodes_event_stream_frames_to_items_and_errors() {
+        let event = encode_frame(
+            &[(":message-type", "event"), (":event-type", "messageStart")],
+            br#"{"messageStart":{"role":"assistant"}}"#,
+        );
+        let error = encode_frame(
+            &[
+                (":message-type", "error"),
+                (":error-code", "ThrottlingException"),
+                (":error-message", "slow down"),
+            ],
+            b"",
+        );
+        let mut body = event.clone();
+        body.extend_from_slice(&error);
+        let frames = decode_event_stream(&body).unwrap();
+        assert_eq!(frames.len(), 2);
+        assert!(
+            matches!(&frames[0], EventFrame::Event(payload) if payload["messageStart"]["role"] == json!("assistant"))
+        );
+        match &frames[1] {
+            EventFrame::Error { code, message } => {
+                assert_eq!(code, "ThrottlingException");
+                assert_eq!(message.as_deref(), Some("slow down"));
+            }
+            other => panic!("expected error frame, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rejects_truncated_event_stream_frames() {
+        assert!(decode_event_stream(&[0, 0, 0, 4]).is_err());
+    }
+
+    #[test]
+    fn formats_amz_dates_from_epoch_millis() {
+        let date = aws_amz_date_now();
+        assert_eq!(date.len(), 16);
+        assert!(date.ends_with('Z'));
+        assert!(date.contains('T'));
+    }
 
     #[test]
     fn extracts_standard_endpoint_regions() {
@@ -1595,4 +1978,556 @@ mod tests {
             true
         ));
     }
+}
+
+// ---------------------------------------------------------------------------
+// Wire transport
+//
+// The TypeScript implementation delegates to the AWS SDK (client config,
+// SigV4/bearer auth, middleware, and the vnd.amazon.eventstream framing).
+// The Rust port implements that protocol directly over the injectable
+// `HttpFetch` transport.
+
+use crate::ai::types::ProviderHeaders;
+use crate::ai::utils::http::{HttpBody, HttpFetch, HttpRequest};
+use crate::ai::utils::sigv4::{SigV4Credentials, SigV4Header, SigV4Request, host_of, sign_request};
+use std::collections::BTreeMap as HeadersMap;
+
+/// The client configuration the TS suite observes on the SDK constructor.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct BedrockDispatchConfig {
+    pub endpoint: Option<String>,
+    pub region: Option<String>,
+    pub profile: Option<String>,
+    pub bearer_token: Option<String>,
+}
+
+/// Port of the client-config resolution in `stream`.
+pub(crate) fn resolve_dispatch_config(
+    model: &Model,
+    options: &BedrockOptions,
+) -> BedrockDispatchConfig {
+    let env = options.base.base.env.as_ref();
+    let options_profile = options.profile.clone().or_else(|| {
+        options
+            .base
+            .base
+            .env
+            .as_ref()
+            .and_then(|env| env.get("AWS_PROFILE").cloned())
+    });
+    let mut config = BedrockDispatchConfig {
+        profile: options_profile
+            .clone()
+            .or_else(|| get_provider_env_value("AWS_PROFILE", env)),
+        ..Default::default()
+    };
+    let configured_region = get_configured_bedrock_region(options.region.as_deref(), env);
+    let has_ambient_configured_profile = get_provider_env_value("AWS_PROFILE", None).is_some();
+    let endpoint_region = get_standard_bedrock_endpoint_region(Some(&model.base_url));
+    let use_explicit_endpoint = should_use_explicit_bedrock_endpoint(
+        &model.base_url,
+        configured_region.as_deref(),
+        has_ambient_configured_profile,
+    );
+    if use_explicit_endpoint {
+        config.endpoint = Some(model.base_url.clone());
+    }
+
+    // Region resolution: ARN-embedded > explicit option > env vars >
+    // endpoint-derived > us-east-1 default (unless an ambient profile owns
+    // region resolution).
+    if let Some(arn_region) = arn_region(&model.id) {
+        config.region = Some(arn_region);
+    } else if let Some(configured) = configured_region {
+        config.region = Some(configured);
+    } else if let Some(endpoint_region) = endpoint_region.filter(|_| use_explicit_endpoint) {
+        config.region = Some(endpoint_region);
+    } else if !has_ambient_configured_profile {
+        config.region = Some("us-east-1".to_string());
+    }
+
+    let skip_auth = get_provider_env_value("AWS_BEDROCK_SKIP_AUTH", env).as_deref() == Some("1");
+    let bearer_token = options
+        .bearer_token
+        .clone()
+        .or_else(|| options.base.base.api_key.clone())
+        .or_else(|| get_provider_env_value("AWS_BEARER_TOKEN_BEDROCK", env))
+        .filter(|_| !skip_auth);
+    config.bearer_token = bearer_token;
+    config
+}
+
+/// The region embedded in a bedrock ARN model id
+/// (`arn:aws[-gov]:bedrock:REGION:...`).
+fn arn_region(model_id: &str) -> Option<String> {
+    let rest = model_id.strip_prefix("arn:")?;
+    let partition_end = rest.find(':')?;
+    let rest = &rest[partition_end + 1..];
+    if rest.split(':').next()? != "bedrock" {
+        return None;
+    }
+    let region = rest.split(':').nth(1)?;
+    (!region.is_empty()).then(|| region.to_string())
+}
+
+/// Port of the custom-headers middleware behavior: reserved SigV4/auth
+/// headers are skipped case-insensitively; others are applied over the
+/// request headers.
+pub(crate) fn apply_custom_headers(
+    request_headers: &mut Vec<(String, String)>,
+    custom: &ProviderHeaders,
+) {
+    for (key, value) in custom {
+        let Some(value) = value else { continue };
+        let lower = key.to_lowercase();
+        if lower.starts_with("x-amz-") || lower == "authorization" || lower == "host" {
+            continue;
+        }
+        request_headers.retain(|(name, _)| name.to_lowercase() != lower);
+        request_headers.push((key.clone(), value.clone()));
+    }
+}
+
+/// Static credentials from the provider env.
+fn static_credentials(env: Option<&ProviderEnv>) -> Option<(String, String, Option<String>)> {
+    let access_key_id = get_provider_env_value("AWS_ACCESS_KEY_ID", env)?;
+    let secret_access_key = get_provider_env_value("AWS_SECRET_ACCESS_KEY", env)?;
+    Some((
+        access_key_id,
+        secret_access_key,
+        get_provider_env_value("AWS_SESSION_TOKEN", env),
+    ))
+}
+
+/// Credentials for the configured profile from `~/.aws/credentials`.
+fn profile_credentials(
+    profile: &str,
+    home_env: Option<&str>,
+) -> Option<(String, String, Option<String>)> {
+    let home = match home_env {
+        Some(home) => Some(home.to_string()),
+        None => std::env::var("HOME").ok(),
+    }?;
+    let contents = std::fs::read_to_string(format!("{home}/.aws/credentials")).ok()?;
+    let in_profile = |section: &str| section == profile || section == format!("profile {profile}");
+    parse_credentials_ini(&contents, in_profile)
+}
+
+fn parse_credentials_ini(
+    contents: &str,
+    in_profile: impl Fn(&str) -> bool,
+) -> Option<(String, String, Option<String>)> {
+    let mut current = String::new();
+    let mut access_key = None;
+    let mut secret_key = None;
+    let mut token = None;
+    for line in contents.lines() {
+        let line = line.trim();
+        if line.starts_with('[') && line.ends_with(']') {
+            if access_key.is_some() && secret_key.is_some() && in_profile(&current) {
+                break;
+            }
+            current = line[1..line.len() - 1].trim().to_string();
+        } else if let Some((key, value)) = line.split_once('=') {
+            let (key, value) = (key.trim(), value.trim());
+            if !in_profile(&current) {
+                continue;
+            }
+            match key {
+                "aws_access_key_id" => access_key = Some(value.to_string()),
+                "aws_secret_access_key" => secret_key = Some(value.to_string()),
+                "aws_session_token" => token = Some(value.to_string()),
+                _ => {}
+            }
+        }
+    }
+    Some((access_key?, secret_key?, token))
+}
+
+/// The resolved request URL and auth inputs.
+struct WireTarget {
+    url: String,
+    host: String,
+    path: String,
+    region: String,
+    auth: WireAuth,
+}
+
+enum WireAuth {
+    Bearer(String),
+    SigV4 {
+        access_key_id: String,
+        secret_access_key: String,
+        session_token: Option<String>,
+    },
+}
+
+fn resolve_wire_target(
+    model: &Model,
+    options: &BedrockOptions,
+    now_amz_date: &str,
+) -> Result<WireTarget, BedrockError> {
+    let env = options.base.base.env.as_ref();
+    let config = resolve_dispatch_config(model, options);
+    let region = config
+        .region
+        .clone()
+        .or_else(|| {
+            // An ambient profile owns region resolution; the shared config file
+            // may pin one, else default.
+            profile_region(config.profile.as_deref())
+        })
+        .unwrap_or_else(|| "us-east-1".to_string());
+    let endpoint = config.endpoint.clone().unwrap_or_else(|| {
+        let suffix = if region.starts_with("cn-") {
+            "amazonaws.com.cn"
+        } else {
+            "amazonaws.com"
+        };
+        format!("https://bedrock-runtime.{region}.{suffix}")
+    });
+    let path = format!(
+        "/model/{}/converse-stream",
+        crate::ai::utils::sigv4::uri_encode(&model.id, true)
+    );
+    let auth = if let Some(token) = config.bearer_token {
+        WireAuth::Bearer(token)
+    } else if get_provider_env_value("AWS_BEDROCK_SKIP_AUTH", env).as_deref() == Some("1") {
+        WireAuth::SigV4 {
+            access_key_id: "dummy-access-key".to_string(),
+            secret_access_key: "dummy-secret-key".to_string(),
+            session_token: None,
+        }
+    } else if let Some((access, secret, token)) = static_credentials(env) {
+        WireAuth::SigV4 {
+            access_key_id: access,
+            secret_access_key: secret,
+            session_token: token,
+        }
+    } else if let Some(profile) = &config.profile
+        && let Some((access, secret, token)) =
+            profile_credentials(profile, std::env::var("HOME").ok().as_deref())
+    {
+        WireAuth::SigV4 {
+            access_key_id: access,
+            secret_access_key: secret,
+            session_token: token,
+        }
+    } else {
+        return Err(BedrockError::transport(
+            "Could not resolve Bedrock credentials: configure AWS_BEARER_TOKEN_BEDROCK, \
+             AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY, an AWS profile, or set \
+             AWS_BEDROCK_SKIP_AUTH=1",
+        ));
+    };
+    let _ = now_amz_date;
+    Ok(WireTarget {
+        url: format!("{endpoint}{path}"),
+        host: host_of(&endpoint),
+        path,
+        region,
+        auth,
+    })
+}
+
+fn profile_region(profile: Option<&str>) -> Option<String> {
+    let profile = profile?;
+    let home = std::env::var("HOME").ok()?;
+    let contents = std::fs::read_to_string(format!("{home}/.aws/config")).ok()?;
+    let mut current = String::new();
+    for line in contents.lines() {
+        let line = line.trim();
+        if line.starts_with('[') && line.ends_with(']') {
+            current = line[1..line.len() - 1].trim().to_string();
+        } else if current == format!("profile {profile}")
+            && let Some((key, value)) = line.split_once('=')
+            && key.trim() == "region"
+        {
+            return Some(value.trim().to_string());
+        }
+    }
+    None
+}
+
+/// Dispatches the built command input over the wire: signs and sends the
+/// converse-stream request, then decodes the vnd.amazon.eventstream frames.
+async fn dispatch_wire(
+    model: &Model,
+    options: &BedrockOptions,
+    input: Value,
+) -> Result<BedrockDispatchResponse, BedrockError> {
+    let fetch: std::sync::Arc<dyn HttpFetch> = options
+        .base
+        .base
+        .fetch
+        .clone()
+        .unwrap_or_else(crate::ai::utils::reqwest_fetch::default_fetch);
+    let amz_date = aws_amz_date_now();
+    let target = resolve_wire_target(model, options, &amz_date)?;
+
+    let body = serde_json::to_vec(&input)
+        .map_err(|error| BedrockError::transport(format!("serialize request: {error}")))?;
+    let mut headers: Vec<(String, String)> = vec![
+        ("content-type".to_string(), "application/json".to_string()),
+        (
+            "accept".to_string(),
+            "application/vnd.amazon.eventstream".to_string(),
+        ),
+        ("host".to_string(), target.host.clone()),
+    ];
+    if let Some(custom) = &options.base.base.headers {
+        apply_custom_headers(&mut headers, custom);
+    }
+    match &target.auth {
+        WireAuth::Bearer(token) => {
+            headers.push(("authorization".to_string(), format!("Bearer {token}")));
+        }
+        WireAuth::SigV4 {
+            access_key_id,
+            secret_access_key,
+            session_token,
+        } => {
+            let credentials = SigV4Credentials {
+                access_key_id,
+                secret_access_key,
+                session_token: session_token.as_deref(),
+            };
+            let request = SigV4Request {
+                method: "POST",
+                path: &target.path,
+                query: &[],
+                headers: vec![
+                    SigV4Header {
+                        name: "content-type".to_string(),
+                        value: "application/json".to_string(),
+                    },
+                    SigV4Header {
+                        name: "host".to_string(),
+                        value: target.host.clone(),
+                    },
+                ],
+                body: &body,
+            };
+            let authorization =
+                sign_request(&request, &credentials, &target.region, "bedrock", &amz_date);
+            headers.push(("x-amz-date".to_string(), amz_date.clone()));
+            if let Some(session_token) = session_token {
+                headers.push(("x-amz-security-token".to_string(), session_token.clone()));
+            }
+            headers.push(("authorization".to_string(), authorization));
+        }
+    }
+
+    let response = fetch
+        .fetch(HttpRequest {
+            method: crate::ai::utils::http::HttpMethod::Post,
+            url: target.url,
+            headers,
+            body: HttpBody::Bytes(bytes::Bytes::from(body)),
+        })
+        .await
+        .map_err(|error| BedrockError::transport(error.to_string()))?;
+
+    let status = response.status;
+    let raw_headers: HeadersMap<String, String> = response
+        .headers
+        .iter()
+        .map(|(name, value)| (name.to_lowercase(), value.clone()))
+        .collect();
+    let body_bytes = response
+        .bytes()
+        .await
+        .map_err(|error| BedrockError::transport(error.to_string()))?;
+    if !(200..300).contains(&status) {
+        let error_type = raw_headers
+            .get("x-amzn-errortype")
+            .map(|value| value.split(':').next().unwrap_or_default().to_string())
+            .unwrap_or_default();
+        let body_text = String::from_utf8_lossy(&body_bytes).to_string();
+        return Err(BedrockError {
+            name: error_type,
+            message: body_text.clone(),
+            body: (!body_text.trim().is_empty()).then_some(body_text),
+            status: Some(status),
+            http_status_code: Some(status),
+            request_id: raw_headers.get("x-amzn-requestid").cloned(),
+            service_exception: true,
+        });
+    }
+
+    let request_id = raw_headers.get("x-amzn-requestid").cloned();
+    let frames = decode_event_stream(&body_bytes)?;
+    let mut items = Vec::new();
+    let mut stream_error = None;
+    for frame in frames {
+        match frame {
+            EventFrame::Event(payload) => items.push(payload),
+            EventFrame::Error { code, message } => {
+                stream_error = Some(BedrockError {
+                    name: code,
+                    message: message.unwrap_or_default(),
+                    service_exception: true,
+                    ..Default::default()
+                });
+            }
+        }
+    }
+    Ok(BedrockDispatchResponse {
+        http_status_code: Some(status),
+        request_id,
+        raw_headers: Some(raw_headers),
+        items,
+        send_error: None,
+        stream_error,
+    })
+}
+
+fn aws_amz_date_now() -> String {
+    // UTC ISO-basic timestamp YYYYMMDDTHHMMSSZ from the epoch millis.
+    let millis = crate::ai::auth::resolve::now_millis();
+    let seconds = millis.div_euclid(1000);
+    let days = seconds.div_euclid(86_400);
+    let secs_of_day = seconds.rem_euclid(86_400);
+    let (year, month, day) = civil_from_days(days);
+    format!(
+        "{year:04}{month:02}{day:02}T{:02}{:02}{:02}Z",
+        secs_of_day / 3600,
+        (secs_of_day % 3600) / 60,
+        secs_of_day % 60
+    )
+}
+
+fn civil_from_days(days: i64) -> (i64, u64, u64) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 14_6096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    (if m <= 2 { y + 1 } else { y }, m as u64, d as u64)
+}
+
+/// One decoded event-stream frame.
+#[derive(Debug)]
+enum EventFrame {
+    Event(Value),
+    Error {
+        code: String,
+        message: Option<String>,
+    },
+}
+
+/// Decodes the AWS `application/vnd.amazon.eventstream` binary framing.
+fn decode_event_stream(body: &[u8]) -> Result<Vec<EventFrame>, BedrockError> {
+    let mut frames = Vec::new();
+    let mut offset = 0usize;
+    while offset < body.len() {
+        if offset + 16 > body.len() {
+            return Err(BedrockError::transport("truncated event-stream prelude"));
+        }
+        let total = u32::from_be_bytes(body[offset..offset + 4].try_into().unwrap()) as usize;
+        let headers_len =
+            u32::from_be_bytes(body[offset + 4..offset + 8].try_into().unwrap()) as usize;
+        if total < 16 || offset + total > body.len() || headers_len + 16 > total {
+            return Err(BedrockError::transport("invalid event-stream frame length"));
+        }
+        let headers_bytes = &body[offset + 12..offset + 12 + headers_len];
+        let payload = &body[offset + 12 + headers_len..offset + total - 4];
+        let headers = parse_event_headers(headers_bytes)?;
+        let message_type = headers
+            .get(":message-type")
+            .cloned()
+            .unwrap_or_else(|| "event".to_string());
+        let frame = match message_type.as_str() {
+            "error" => EventFrame::Error {
+                code: headers.get(":error-code").cloned().unwrap_or_default(),
+                message: headers.get(":error-message").cloned(),
+            },
+            _ => {
+                let payload = String::from_utf8_lossy(payload);
+                let json: Value = if payload.trim().is_empty() {
+                    Value::Null
+                } else {
+                    serde_json::from_str(&payload).map_err(|error| {
+                        BedrockError::transport(format!("event payload: {error}"))
+                    })?
+                };
+                EventFrame::Event(json)
+            }
+        };
+        frames.push(frame);
+        offset += total;
+    }
+    Ok(frames)
+}
+
+fn parse_event_headers(bytes: &[u8]) -> Result<BTreeMap<String, String>, BedrockError> {
+    let mut headers = BTreeMap::new();
+    let mut offset = 0usize;
+    while offset < bytes.len() {
+        let name_len = bytes[offset] as usize;
+        offset += 1;
+        if offset + name_len + 1 > bytes.len() {
+            return Err(BedrockError::transport("truncated event-stream header"));
+        }
+        let name = String::from_utf8_lossy(&bytes[offset..offset + name_len]).to_string();
+        offset += name_len;
+        let value_type = bytes[offset];
+        offset += 1;
+        let value = match value_type {
+            7 => {
+                let len =
+                    u16::from_be_bytes(bytes[offset..offset + 2].try_into().unwrap()) as usize;
+                offset += 2;
+                if offset + len > bytes.len() {
+                    return Err(BedrockError::transport(
+                        "truncated event-stream header value",
+                    ));
+                }
+                let value = String::from_utf8_lossy(&bytes[offset..offset + len]).to_string();
+                offset += len;
+                value
+            }
+            // Frame-level numeric headers (content-length etc.) are not
+            // needed by the conversion.
+            2 => {
+                offset += 1;
+                String::new()
+            }
+            3 => {
+                offset += 2;
+                String::new()
+            }
+            4 => {
+                offset += 4;
+                String::new()
+            }
+            5 | 8 => {
+                offset += 8;
+                String::new()
+            }
+            9 => {
+                offset += 16;
+                String::new()
+            }
+            6 => {
+                let len =
+                    u16::from_be_bytes(bytes[offset..offset + 2].try_into().unwrap()) as usize;
+                offset += 2 + len;
+                String::new()
+            }
+            0 | 1 => String::new(),
+            other => {
+                return Err(BedrockError::transport(format!(
+                    "unknown event-stream header value type {other}"
+                )));
+            }
+        };
+        headers.insert(name, value);
+    }
+    Ok(headers)
 }

@@ -16,6 +16,7 @@ pub mod provider_retry;
 pub mod reqwest_fetch;
 pub mod retry;
 pub mod sanitize_unicode;
+pub mod sigv4;
 pub mod sse;
 pub mod text;
 pub mod uuid;
