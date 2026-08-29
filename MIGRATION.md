@@ -63,7 +63,7 @@ upstream package).
 | `src/api/google-generative-ai.ts` | `src/ai/api/google_generative_ai.rs` | done |
 | `src/api/google-shared.ts` | `src/ai/api/google_shared.rs` | done |
 | `src/api/google-vertex.lazy.ts` | | pending |
-| `src/api/google-vertex.ts` | | pending |
+| `src/api/google-vertex.ts` | `src/ai/api/google_vertex.rs` | done |
 | `src/api/lazy.ts` | | pending |
 | `src/api/mistral-conversations.lazy.ts` | | pending |
 | `src/api/mistral-conversations.ts` | `src/ai/api/mistral_conversations.rs` | done |
