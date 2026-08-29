@@ -85,14 +85,14 @@ upstream package).
 | `src/auth/credential-store.ts` | `src/ai/auth/credential_store.rs` | done |
 | `src/auth/helpers.ts` | `src/ai/auth/helpers.rs` | done |
 | `src/auth/oauth/anthropic.ts` | | pending (with providers, M3) |
-| `src/auth/oauth/device-code.ts` | | pending |
+| `src/auth/oauth/device-code.ts` | `src/ai/auth/oauth/device_code.rs` | done (tokio time drives the fake-timer tests deterministically) |
 | `src/auth/oauth/github-copilot.ts` | | pending |
 | `src/auth/oauth/kimi-coding.ts` | | pending |
 | `src/auth/oauth/load.ts` | | pending |
 | `src/auth/oauth/oauth-page.ts` | | pending |
 | `src/auth/oauth/openai-codex.ts` | | pending |
 | `src/auth/oauth/openrouter.ts` | | pending |
-| `src/auth/oauth/pkce.ts` | | pending |
+| `src/auth/oauth/pkce.ts` | `src/ai/auth/oauth/pkce.rs` | done |
 | `src/auth/oauth/radius.ts` | | pending |
 | `src/auth/oauth/xai.ts` | | pending |
 | `src/auth/resolve.ts` | `src/ai/auth/resolve.rs` | done |
@@ -309,7 +309,7 @@ upstream package).
 | `test/models-runtime.test.ts` | | pending |
 | `test/node-http-proxy.test.ts` | | pending |
 | `test/oauth-auth.test.ts` | | pending |
-| `test/oauth-device-code.test.ts` | | pending |
+| `test/oauth-device-code.test.ts` | `tests/ai_oauth_device_code.rs` | done |
 | `test/oauth.ts` | | pending |
 | `test/openai-codex-cache-affinity-e2e.test.ts` | | pending |
 | `test/openai-codex-oauth.test.ts` | | pending |
