@@ -3,6 +3,7 @@
 pub mod abort;
 pub mod deferred_tools;
 pub mod diagnostics;
+pub mod error_body;
 pub mod estimate;
 pub mod event_stream;
 pub mod headers;
@@ -10,6 +11,8 @@ pub mod http;
 pub mod json_parse;
 pub mod overflow;
 pub mod provider_env;
+pub mod provider_retry;
+pub mod retry;
 pub mod sanitize_unicode;
 pub mod text;
 pub mod uuid;

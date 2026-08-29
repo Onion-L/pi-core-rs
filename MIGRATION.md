@@ -207,7 +207,7 @@ upstream package).
 | `src/utils/abort.ts` | `src/ai/utils/abort.rs` | done |
 | `src/utils/deferred-tools.ts` | `src/ai/utils/deferred_tools.rs` | done |
 | `src/utils/diagnostics.ts` | `src/ai/utils/diagnostics.rs` | done |
-| `src/utils/error-body.ts` | | pending |
+| `src/utils/error-body.ts` | `src/ai/utils/error_body.rs` | done |
 | `src/utils/estimate.ts` | `src/ai/utils/estimate.rs` | done |
 | `src/utils/event-stream.ts` | `src/ai/utils/event_stream.rs` | done |
 | `src/utils/hash.ts` | `src/ai/utils/text.rs (short_hash)` | done |
@@ -217,8 +217,8 @@ upstream package).
 | `src/utils/overflow.ts` | `src/ai/utils/overflow.rs` | done |
 | `src/utils/pi-user-agent.ts` | | pending |
 | `src/utils/provider-env.ts` | `src/ai/utils/provider_env.rs` | done |
-| `src/utils/provider-retry.ts` | | pending |
-| `src/utils/retry.ts` | | pending |
+| `src/utils/provider-retry.ts` | `src/ai/utils/provider_retry.rs` | done |
+| `src/utils/retry.ts` | `src/ai/utils/retry.rs` | done |
 | `src/utils/sanitize-unicode.ts` | `src/ai/utils/sanitize_unicode.rs` | done |
 | `src/utils/sleep.ts` | `src/ai/utils/abort.rs (abortable_sleep)` | done |
 | `src/utils/text.ts` | `src/ai/utils/text.rs` | done |
