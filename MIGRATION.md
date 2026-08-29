@@ -86,7 +86,7 @@ upstream package).
 | `src/auth/helpers.ts` | `src/ai/auth/helpers.rs` | done |
 | `src/auth/oauth/anthropic.ts` | `src/ai/auth/oauth/anthropic.rs` | done (loopback callback over tokio TcpListener; client id inlined decoded) |
 | `src/auth/oauth/device-code.ts` | `src/ai/auth/oauth/device_code.rs` | done (tokio time drives the fake-timer tests deterministically) |
-| `src/auth/oauth/github-copilot.ts` | | pending |
+| `src/auth/oauth/github-copilot.ts` | `src/ai/auth/oauth/github_copilot.rs` | done (client id inlined decoded; rate-limit budget uses injectable clock) |
 | `src/auth/oauth/kimi-coding.ts` | `src/ai/auth/oauth/kimi_coding.rs` | done (injectable transport/clock/env; tokio timeout reproduces the 30s request signal) |
 | `src/auth/oauth/load.ts` | | pending |
 | `src/auth/oauth/oauth-page.ts` | `src/ai/auth/oauth/oauth_page.rs` | done |
@@ -280,7 +280,7 @@ upstream package).
 | `test/fireworks-models.test.ts` | | pending |
 | `test/generate-models-strict.test.ts` | | pending |
 | `test/github-copilot-anthropic.test.ts` | | pending |
-| `test/github-copilot-oauth.test.ts` | | pending |
+| `test/github-copilot-oauth.test.ts` | `tests/ai_oauth_github_copilot.rs` | done (Models.login/store integration cases land with the provider factories) |
 | `test/google-raw-stop-reason.test.ts` | | pending |
 | `test/google-shared-convert-tools.test.ts` | | pending |
 | `test/google-shared-gemini3-unsigned-tool-call.test.ts` | | pending |

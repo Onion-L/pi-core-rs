@@ -2,6 +2,7 @@
 
 pub mod anthropic;
 pub mod device_code;
+pub mod github_copilot;
 pub mod kimi_coding;
 pub mod oauth_page;
 pub mod openrouter;
