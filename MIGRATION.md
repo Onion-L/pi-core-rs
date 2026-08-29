@@ -89,9 +89,9 @@ upstream package).
 | `src/auth/oauth/github-copilot.ts` | | pending |
 | `src/auth/oauth/kimi-coding.ts` | `src/ai/auth/oauth/kimi_coding.rs` | done (injectable transport/clock/env; tokio timeout reproduces the 30s request signal) |
 | `src/auth/oauth/load.ts` | | pending |
-| `src/auth/oauth/oauth-page.ts` | | pending |
+| `src/auth/oauth/oauth-page.ts` | `src/ai/auth/oauth/oauth_page.rs` | done |
 | `src/auth/oauth/openai-codex.ts` | | pending |
-| `src/auth/oauth/openrouter.ts` | | pending |
+| `src/auth/oauth/openrouter.ts` | `src/ai/auth/oauth/openrouter.rs` | done (loopback callback over tokio TcpListener; callback path uses UUIDv7 in place of crypto.randomUUID) |
 | `src/auth/oauth/pkce.ts` | `src/ai/auth/oauth/pkce.rs` | done |
 | `src/auth/oauth/radius.ts` | | pending |
 | `src/auth/oauth/xai.ts` | `src/ai/auth/oauth/xai.rs` | done (injectable transport + clock replace global fetch and `vi.setSystemTime`) |
@@ -338,7 +338,7 @@ upstream package).
 | `test/openrouter-cache-control-models.test.ts` | | pending |
 | `test/openrouter-cache-write-repro.test.ts` | | pending |
 | `test/openrouter-images.test.ts` | `tests/ai_openrouter_images.rs` | done (mock at the `HttpFetch` transport replaces the OpenAI-SDK mock) |
-| `test/openrouter-oauth.test.ts` | | pending |
+| `test/openrouter-oauth.test.ts` | `tests/ai_oauth_openrouter.rs` | done (the two provider-integration cases land with the provider factories) |
 | `test/openrouter-reasoning-options.test.ts` | | pending |
 | `test/overflow.test.ts` | | pending |
 | `test/pi-messages.test.ts` | | pending |
