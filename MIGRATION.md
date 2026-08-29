@@ -409,8 +409,8 @@ upstream package).
 
 | TypeScript source | Rust module | Status |
 |---|---|---|
-| `src/agent-loop.ts` | | pending |
-| `src/agent.ts` | | pending |
+| `src/agent-loop.ts` | `src/agent/agent_loop.rs` | done |
+| `src/agent.ts` | `src/agent/agent.rs` | done |
 | `src/harness/agent-harness.ts` | | pending |
 | `src/harness/compaction/branch-summarization.ts` | | pending |
 | `src/harness/compaction/compaction.ts` | | pending |
@@ -454,17 +454,41 @@ upstream package).
 | `src/harness/utils/truncate.ts` | | pending |
 | `src/index.ts` | | pending |
 | `src/node.ts` | | pending |
-| `src/proxy.ts` | | pending |
+| `src/proxy.ts` | `src/agent/proxy.rs` | done (request runs through the crate `HttpFetch` transport, injectable via `ProxyStreamOptions.fetch`, instead of `globalThis.fetch`; cancellation is observed between body chunks) |
 | `src/search/index.ts` | | pending |
 | `src/search/scanning.ts` | | pending |
-| `src/stream-fn.ts` | | pending |
-| `src/types.ts` | `src/ai/types.rs` | done |
+| `src/stream-fn.ts` | `src/agent/stream_fn.rs` | done |
+| `src/types.ts` | `src/agent/types.rs` (+ `src/ai/types.rs` for the shared LLM types) | done |
+
+### Documented deviations (agent core)
+
+- `StreamFn` returns `Result<AssistantMessageEventStream, String>`: the
+  Rust analog of a throwing TypeScript stream function. Contract-violating
+  failures escape the loop as `Err` exactly like uncaught throws, driving
+  the Agent failure-event sequence (`agent.test.ts` "thrown run failures").
+- Hook callbacks (`convertToLlm`, `transformContext`, `getApiKey`,
+  `shouldStopAfterTurn`, `prepareNextTurn`, steering/follow-up getters)
+  are infallible, matching the TypeScript callback types. `beforeToolCall`
+  mutates the shared validated-arguments value through an
+  `Arc<Mutex<serde_json::Value>>`, preserving the mutate-without-
+  revalidation behavior asserted upstream.
+- `Agent` exposes state through accessor methods (`system_prompt()`,
+  `set_messages(...)`, ...) instead of the mutable `agent.state` object;
+  `prompt()`/`continue_()`/`reset()` return `Result` where TypeScript
+  throws. `Agent` methods take `&self` — share it via `Arc` across tasks.
+- Custom application messages (TypeScript interface merging on
+  `CustomAgentMessages`) ride as `AgentMessage::Custom` carrying the role
+  plus the full JSON payload.
+- `AgentTool.execute` receives the validated arguments as JSON and returns
+  `Result<AgentToolResult, String>` (throw → error tool result); tool
+  update callbacks queue their events and settle before
+  `tool_execution_end`, preserving the settle-then-ignore semantics.
 
 ### Tests
 
 | TypeScript test | Rust test | Status |
 |---|---|---|
-| `test/agent-loop.test.ts` | | pending |
-| `test/agent.test.ts` | | pending |
-| `test/e2e.test.ts` | | pending |
-| `test/proxy.test.ts` | | pending |
+| `test/agent-loop.test.ts` | `tests/agent_loop.rs` | done |
+| `test/agent.test.ts` | `tests/agent.rs` | done |
+| `test/e2e.test.ts` | `tests/agent_e2e.rs` | done (`test/utils/calculate.ts` ports with a minimal arithmetic evaluator standing in for `new Function` eval — same grammar the suite exercises) |
+| `test/proxy.test.ts` | `tests/agent_proxy.rs` | done (mock injected through `ProxyStreamOptions.fetch` instead of a `vi.stubGlobal` fetch stub) |
