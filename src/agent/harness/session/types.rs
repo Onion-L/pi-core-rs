@@ -43,52 +43,48 @@ pub enum Entry {
     #[serde(rename = "message")]
     Message {
         id: String,
-        seq: u64,
-        #[serde(rename = "parentId")]
-        parent_id: Option<String>,
-        timestamp: i64,
         message: AgentMessage,
         #[serde(skip_serializing_if = "Option::is_none", default)]
         terminate: Option<bool>,
+        #[serde(rename = "parentId")]
+        parent_id: Option<String>,
+        seq: u64,
+        timestamp: i64,
     },
     #[serde(rename = "model_change")]
     ModelChange {
         id: String,
-        seq: u64,
-        #[serde(rename = "parentId")]
-        parent_id: Option<String>,
-        timestamp: i64,
         provider: String,
         #[serde(rename = "modelId")]
         model_id: String,
+        #[serde(rename = "parentId")]
+        parent_id: Option<String>,
+        seq: u64,
+        timestamp: i64,
     },
     #[serde(rename = "thinking_level_change")]
     ThinkingLevelChange {
         id: String,
-        seq: u64,
-        #[serde(rename = "parentId")]
-        parent_id: Option<String>,
-        timestamp: i64,
         #[serde(rename = "thinkingLevel")]
         thinking_level: String,
+        #[serde(rename = "parentId")]
+        parent_id: Option<String>,
+        seq: u64,
+        timestamp: i64,
     },
     #[serde(rename = "active_tools_change")]
     ActiveToolsChange {
         id: String,
-        seq: u64,
-        #[serde(rename = "parentId")]
-        parent_id: Option<String>,
-        timestamp: i64,
         #[serde(rename = "activeToolNames")]
         active_tool_names: Vec<String>,
+        #[serde(rename = "parentId")]
+        parent_id: Option<String>,
+        seq: u64,
+        timestamp: i64,
     },
     #[serde(rename = "compaction")]
     Compaction {
         id: String,
-        seq: u64,
-        #[serde(rename = "parentId")]
-        parent_id: Option<String>,
-        timestamp: i64,
         summary: String,
         #[serde(rename = "retainedTail")]
         retained_tail: Vec<AgentMessage>,
@@ -98,14 +94,14 @@ pub enum Entry {
         details: Option<serde_json::Value>,
         #[serde(skip_serializing_if = "Option::is_none", default)]
         usage: Option<Usage>,
+        #[serde(rename = "parentId")]
+        parent_id: Option<String>,
+        seq: u64,
+        timestamp: i64,
     },
     #[serde(rename = "branch_summary")]
     BranchSummary {
         id: String,
-        seq: u64,
-        #[serde(rename = "parentId")]
-        parent_id: Option<String>,
-        timestamp: i64,
         #[serde(rename = "fromId")]
         from_id: String,
         summary: String,
@@ -113,18 +109,22 @@ pub enum Entry {
         details: Option<serde_json::Value>,
         #[serde(skip_serializing_if = "Option::is_none", default)]
         usage: Option<Usage>,
+        #[serde(rename = "parentId")]
+        parent_id: Option<String>,
+        seq: u64,
+        timestamp: i64,
     },
     #[serde(rename = "custom")]
     Custom {
         id: String,
-        seq: u64,
-        #[serde(rename = "parentId")]
-        parent_id: Option<String>,
-        timestamp: i64,
         #[serde(rename = "customType")]
         custom_type: String,
         #[serde(skip_serializing_if = "Option::is_none", default)]
         data: Option<serde_json::Value>,
+        #[serde(rename = "parentId")]
+        parent_id: Option<String>,
+        seq: u64,
+        timestamp: i64,
     },
 }
 
@@ -469,6 +469,13 @@ pub enum UsageCause {
     },
 }
 
+/// The error payload of `operation_finished`.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct RecordError {
+    pub code: String,
+    pub message: String,
+}
+
 /// Port of `LaneRecord`.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -476,40 +483,38 @@ pub enum LaneRecord {
     #[serde(rename = "operation_started")]
     OperationStarted {
         id: String,
-        seq: u64,
         lane: String,
-        timestamp: i64,
         #[serde(rename = "sourceLeafId")]
         source_leaf_id: Option<String>,
         intent: OperationIntent,
+        seq: u64,
+        timestamp: i64,
     },
     #[serde(rename = "abort_requested")]
     AbortRequested {
         id: String,
-        seq: u64,
         lane: String,
-        timestamp: i64,
         #[serde(rename = "runId")]
         run_id: String,
+        seq: u64,
+        timestamp: i64,
     },
     #[serde(rename = "operation_finished")]
     OperationFinished {
         id: String,
-        seq: u64,
         lane: String,
-        timestamp: i64,
         #[serde(rename = "runId")]
         run_id: String,
         outcome: String,
         #[serde(skip_serializing_if = "Option::is_none", default)]
         error: Option<RecordError>,
+        seq: u64,
+        timestamp: i64,
     },
     #[serde(rename = "step_attempt")]
     StepAttempt {
         id: String,
-        seq: u64,
         lane: String,
-        timestamp: i64,
         #[serde(rename = "runId")]
         run_id: String,
         step: String,
@@ -522,13 +527,13 @@ pub enum LaneRecord {
             default
         )]
         compaction_reason: Option<String>,
+        seq: u64,
+        timestamp: i64,
     },
     #[serde(rename = "tool_started")]
     ToolStarted {
         id: String,
-        seq: u64,
         lane: String,
-        timestamp: i64,
         #[serde(rename = "runId")]
         run_id: String,
         #[serde(rename = "assistantEntryId")]
@@ -544,56 +549,51 @@ pub enum LaneRecord {
         #[serde(rename = "resultEntryId")]
         result_entry_id: String,
         replay: String,
+        seq: u64,
+        timestamp: i64,
     },
     #[serde(rename = "queue_enqueued")]
     QueueEnqueued {
         id: String,
-        seq: u64,
         lane: String,
-        timestamp: i64,
         queue: String,
         #[serde(rename = "runId", skip_serializing_if = "Option::is_none", default)]
         run_id: Option<String>,
         target: Entry,
+        seq: u64,
+        timestamp: i64,
     },
     #[serde(rename = "queue_cancelled")]
     QueueCancelled {
         id: String,
-        seq: u64,
         lane: String,
-        timestamp: i64,
         #[serde(rename = "runId", skip_serializing_if = "Option::is_none", default)]
         run_id: Option<String>,
         #[serde(rename = "entryId")]
         entry_id: String,
+        seq: u64,
+        timestamp: i64,
     },
     #[serde(rename = "write_deferred")]
     WriteDeferred {
         id: String,
-        seq: u64,
         lane: String,
-        timestamp: i64,
         #[serde(rename = "runId")]
         run_id: String,
         target: Entry,
+        seq: u64,
+        timestamp: i64,
     },
     #[serde(rename = "usage")]
     Usage {
         id: String,
-        seq: u64,
         lane: String,
-        timestamp: i64,
+        usage: Usage,
         #[serde(flatten)]
         cause: UsageCause,
-        usage: Usage,
+        seq: u64,
+        timestamp: i64,
     },
-}
-
-/// The error payload of `operation_finished`.
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct RecordError {
-    pub code: String,
-    pub message: String,
 }
 
 impl LaneRecord {

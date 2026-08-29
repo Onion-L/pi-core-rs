@@ -15,7 +15,26 @@ use super::types::{
     SessionStats, SessionStorage,
 };
 
-fn now_millis() -> i64 {
+/// Injectable clock mirroring the TypeScript suites' `Date.now` overrides.
+pub type ClockFn = std::sync::Arc<dyn Fn() -> i64 + Send + Sync>;
+
+static CLOCK_OVERRIDE: std::sync::RwLock<Option<ClockFn>> = std::sync::RwLock::new(None);
+
+/// Overrides the session clock (test seam; pass `None` to restore).
+pub fn set_clock_override(clock: Option<ClockFn>) {
+    *CLOCK_OVERRIDE
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = clock;
+}
+
+pub(crate) fn now_millis() -> i64 {
+    if let Some(clock) = CLOCK_OVERRIDE
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .as_ref()
+    {
+        return clock();
+    }
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_millis() as i64)
