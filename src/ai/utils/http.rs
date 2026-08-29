@@ -16,7 +16,7 @@ pub struct HttpRequest {
     pub method: HttpMethod,
     pub url: String,
     pub headers: Vec<(String, String)>,
-    pub body: HttpRequestBody,
+    pub body: HttpBody,
 }
 
 /// Supported request methods.
@@ -43,7 +43,7 @@ impl HttpMethod {
 
 /// A request body.
 #[derive(Clone, Debug, Default)]
-pub enum HttpRequestBody {
+pub enum HttpBody {
     #[default]
     Empty,
     Bytes(Bytes),

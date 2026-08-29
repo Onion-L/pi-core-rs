@@ -22,6 +22,7 @@ url = "2"
 futures = "0.3"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "time", "macros", "process", "io-util", "net", "fs"] }
 tokio-util = "0.7"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots", "stream", "json", "gzip"] }
 
 [dev-dependencies]
 serde_json = { version = "1", features = ["preserve_order"] }

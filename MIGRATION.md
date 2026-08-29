@@ -391,7 +391,9 @@ upstream package).
 
 | Rust module | Purpose | Status |
 |---|---|---|
-| `src/ai/utils/http.rs` | Transport abstraction behind the `fetch` option (`FetchFunction`); reqwest-backed default lands with the providers | done (trait) |
+| `src/ai/utils/http.rs` | Transport abstraction behind the `fetch` option (`FetchFunction`) | done (trait) |
+| `src/ai/utils/reqwest_fetch.rs` | reqwest-backed default transport with node-http-proxy resolution | done |
+| `src/ai/utils/sse.rs` | SSE decoder + async event stream (ported from the shared reader in anthropic-messages.ts) | done |
 
 ## pi-agent-core
 
