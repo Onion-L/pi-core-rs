@@ -5,6 +5,7 @@ pub mod device_code;
 pub mod github_copilot;
 pub mod kimi_coding;
 pub mod oauth_page;
+pub mod openai_codex;
 pub mod openrouter;
 pub mod pkce;
 pub mod radius;

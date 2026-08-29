@@ -90,7 +90,7 @@ upstream package).
 | `src/auth/oauth/kimi-coding.ts` | `src/ai/auth/oauth/kimi_coding.rs` | done (injectable transport/clock/env; tokio timeout reproduces the 30s request signal) |
 | `src/auth/oauth/load.ts` | | pending |
 | `src/auth/oauth/oauth-page.ts` | `src/ai/auth/oauth/oauth_page.rs` | done |
-| `src/auth/oauth/openai-codex.ts` | | pending |
+| `src/auth/oauth/openai-codex.ts` | `src/ai/auth/oauth/openai_codex.rs` | done (browser callback over tokio TcpListener; `accountId` rides the credential extension map) |
 | `src/auth/oauth/openrouter.ts` | `src/ai/auth/oauth/openrouter.rs` | done (loopback callback over tokio TcpListener; callback path uses UUIDv7 in place of crypto.randomUUID) |
 | `src/auth/oauth/pkce.ts` | `src/ai/auth/oauth/pkce.rs` | done |
 | `src/auth/oauth/radius.ts` | `src/ai/auth/oauth/radius.rs` | done (loopback callback over tokio TcpListener; credential `scope` rides the extension map) |
@@ -312,7 +312,7 @@ upstream package).
 | `test/oauth-device-code.test.ts` | `tests/ai_oauth_device_code.rs` | done |
 | `test/oauth.ts` | | pending |
 | `test/openai-codex-cache-affinity-e2e.test.ts` | | pending |
-| `test/openai-codex-oauth.test.ts` | | pending |
+| `test/openai-codex-oauth.test.ts` | `tests/ai_oauth_openai_codex.rs` | done |
 | `test/openai-codex-stream.test.ts` | | pending |
 | `test/openai-completions-cache-control-format.test.ts` | | pending |
 | `test/openai-completions-empty-tools.test.ts` | | pending |
