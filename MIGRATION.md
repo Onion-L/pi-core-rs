@@ -55,8 +55,8 @@ upstream package).
 | `src/api/azure-openai-responses.ts` | `src/ai/api/azure_openai_responses.rs` | done |
 | `src/api/bedrock-converse-stream.lazy.ts` | | pending |
 | `src/api/bedrock-converse-stream.ts` | | pending |
-| `src/api/cloudflare-gateway-binding.ts` | | pending |
-| `src/api/cloudflare.ts` | | pending |
+| `src/api/cloudflare-gateway-binding.ts` | `src/ai/api/cloudflare_gateway_binding.rs` | done (Request/init split and fetch-signal forwarding have no Rust transport equivalent; documented in the module) |
+| `src/api/cloudflare.ts` | `src/ai/api/cloudflare.rs` | done |
 | `src/api/constrained-sampling.ts` | `src/ai/api/constrained-sampling.rs` | done |
 | `src/api/github-copilot-headers.ts` | `src/ai/api/github-copilot-headers.rs` | done |
 | `src/api/google-generative-ai.lazy.ts` | | pending |
@@ -262,7 +262,7 @@ upstream package).
 | `test/bedrock-thinking-payload.test.ts` | | pending |
 | `test/bedrock-utils.ts` | | pending |
 | `test/cache-retention.test.ts` | | pending |
-| `test/cloudflare-gateway-binding.test.ts` | | pending |
+| `test/cloudflare-gateway-binding.test.ts` | `tests/ai_cloudflare_gateway_binding.rs` | done (Request/signal-specific cases documented as N/A in the test header) |
 | `test/cloudflare-stream.test.ts` | | pending |
 | `test/cloudflare-utils.ts` | | pending |
 | `test/codex-websocket-cached-probe.ts` | | pending |
