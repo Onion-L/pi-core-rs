@@ -74,7 +74,7 @@ upstream package).
 | `src/api/openai-prompt-cache.ts` | `src/ai/api/openai_completions.rs` | done |
 | `src/api/openai-responses-shared.ts` | | pending |
 | `src/api/openai-responses.lazy.ts` | | pending |
-| `src/api/openai-responses.ts` | | pending |
+| `src/api/openai-responses.ts` | `src/ai/api/openai_responses.rs` | done |
 | `src/api/openrouter-images.lazy.ts` | | pending |
 | `src/api/openrouter-images.ts` | | pending |
 | `src/api/pi-messages.lazy.ts` | | pending |

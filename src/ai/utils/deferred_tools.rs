@@ -67,3 +67,14 @@ pub struct DeferredToolSplit {
     /// Deferred tools keyed by normalized tool name.
     pub deferred: HashMap<String, Tool>,
 }
+
+impl DeferredToolSplit {
+    /// The deferred map as an ordered map (insertion order is not part of the
+    /// contract).
+    pub fn deferred_btree(&self) -> BTreeMap<String, Tool> {
+        self.deferred
+            .iter()
+            .map(|(name, tool)| (name.clone(), tool.clone()))
+            .collect()
+    }
+}
