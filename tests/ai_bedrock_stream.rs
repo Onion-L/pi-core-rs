@@ -1222,3 +1222,23 @@ async fn wire_stream_decodes_framed_events_end_to_end() {
         other => panic!("expected text, got {other:?}"),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Bedrock catalog (bedrock-models.test.ts offline cases; the extensive
+// per-model live suite is credentials-gated upstream too).
+
+#[test]
+fn bedrock_catalog_lists_models_via_inference_profiles() {
+    let models = pi_core::ai::models_generated::models_for_provider("amazon-bedrock");
+    assert!(!models.is_empty());
+    assert!(
+        models
+            .iter()
+            .any(|model| model.id == "global.anthropic.claude-opus-5")
+    );
+    assert!(
+        !models
+            .iter()
+            .any(|model| model.id == "anthropic.claude-opus-5")
+    );
+}

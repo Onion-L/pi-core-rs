@@ -115,9 +115,9 @@ upstream package).
 | `src/models.generated.ts` | `src/ai/models_generated.rs (+ src/ai/data/models.generated.json via scripts/oracle/export-model-catalog.mts)` | done |
 | `src/models.ts` | `src/ai/models.rs` | done |
 | `src/oauth.ts` | `src/ai/compat.rs (type re-exports)` | done |
-| `src/providers/all.ts` | `src/ai/providers/builtin.rs` | done (the amazon-bedrock factory lands with the bedrock converse-stream module; noted in the module) |
-| `src/providers/amazon-bedrock.models.ts` | | pending |
-| `src/providers/amazon-bedrock.ts` | | pending |
+| `src/providers/all.ts` | `src/ai/providers/builtin.rs` | done |
+| `src/providers/amazon-bedrock.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/amazon-bedrock.ts` | `src/ai/providers/amazon_bedrock.rs` | done |
 | `src/providers/ant-ling.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
 | `src/providers/ant-ling.ts` | `src/ai/providers/builtin.rs` | done |
 | `src/providers/anthropic.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
@@ -251,16 +251,16 @@ upstream package).
 | `test/azure-utils.ts` | | pending |
 | `test/baseten-models.test.ts` | | pending |
 | `test/bedrock-convert-messages.test.ts` | `tests/ai_bedrock_stream.rs` | done (the two unknown-content-block cases are N/A: Rust's closed content enums cannot carry unknown block types) |
-| `test/bedrock-credentials.test.ts` | | pending |
+| `test/bedrock-credentials.test.ts` | inline in `src/ai/api/bedrock_converse_stream.rs` | done (observed on the resolved dispatch config) |
 | `test/bedrock-custom-headers.test.ts` | inline in `src/ai/api/bedrock_converse_stream.rs` | done (middleware apply behavior observed on the outgoing header list; the SDK step/priority/name registration mechanics are N/A) |
 | `test/bedrock-endpoint-resolution.test.ts` | inline in `src/ai/api/bedrock_converse_stream.rs` | done (observed on the resolved dispatch config instead of the SDK constructor) |
 | `test/bedrock-error-metadata.test.ts` | `tests/ai_bedrock_stream.rs` | done |
-| `test/bedrock-models.test.ts` | | pending |
+| `test/bedrock-models.test.ts` | `tests/ai_bedrock_stream.rs` | done (offline cases; the per-model live suite is credentials-gated upstream and skips identically) |
 | `test/bedrock-raw-stop-reason.test.ts` | `tests/ai_bedrock_stream.rs` | done |
 | `test/bedrock-redacted-reasoning.test.ts` | `tests/ai_bedrock_stream.rs` | done |
 | `test/bedrock-response-headers.test.ts` | `tests/ai_bedrock_stream.rs` | done (local HTTP server) |
 | `test/bedrock-thinking-payload.test.ts` | `tests/ai_bedrock_stream.rs` | done (credentials-gated E2E case skips like the TS `describe.skipIf`; payload captured via onPayload with an aborted signal instead of a thrown capture) |
-| `test/bedrock-utils.ts` | | pending |
+| `test/bedrock-utils.ts` | | exception (live-credential helper for the credentials-gated model suite; no offline behavior to port) |
 | `test/cache-retention.test.ts` | | pending |
 | `test/cloudflare-gateway-binding.test.ts` | `tests/ai_cloudflare_gateway_binding.rs` | done (Request/signal-specific cases documented as N/A in the test header) |
 | `test/cloudflare-stream.test.ts` | `tests/ai_cloudflare_stream.rs` | done (third case covers the TS `??` placeholder-fallback branch) |
@@ -345,7 +345,7 @@ upstream package).
 | `test/provider-error-body-passthrough.test.ts` | | pending |
 | `test/provider-error-body-regression.test.ts` | | pending |
 | `test/provider-retry.test.ts` | | pending |
-| `test/providers.test.ts` | `tests/ai_providers.rs` (+ `tests/ai_models.rs` for the dispatch-error case) | partial (all non-bedrock cases ported: catalog, auth precedence, getAuth, dispatch, env merge, deferred options, faux streams, dynamic-refresh supersede; the two bedrock cases land with the bedrock module) |
+| `test/providers.test.ts` | `tests/ai_providers.rs` (+ `tests/ai_models.rs` for the dispatch-error case) | done |
 | `test/qwen-token-plan-models.test.ts` | | pending |
 | `test/radius-oauth.test.ts` | `tests/ai_oauth_radius.rs` | done |
 | `test/reasoning-options.test.ts` | | pending |

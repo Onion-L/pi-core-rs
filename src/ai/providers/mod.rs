@@ -1,5 +1,6 @@
 //! Port of `pi-core/ai/src/providers`.
 
+pub mod amazon_bedrock;
 pub mod anthropic;
 pub mod apis;
 pub mod builtin;

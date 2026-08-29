@@ -1361,3 +1361,102 @@ async fn lets_a_newer_dynamic_refresh_bypass_and_supersede_older_network_work() 
         vec!["listed-2"]
     );
 }
+
+#[tokio::test]
+async fn runs_provider_owned_bedrock_bearer_token_and_aws_profile_login_flows() {
+    use pi_core::ai::providers::amazon_bedrock::amazon_bedrock_provider;
+
+    let auth = amazon_bedrock_provider()
+        .auth()
+        .api_key
+        .clone()
+        .expect("api key auth");
+
+    let bearer_interaction = scripted(&["bearer-token", "bedrock-token"]);
+    let credential = auth
+        .login(bearer_interaction)
+        .expect("login")
+        .await
+        .unwrap();
+    assert_eq!(
+        credential,
+        ApiKeyCredential {
+            key: Some("bedrock-token".to_string()),
+            env: None,
+        }
+    );
+
+    let profile_interaction = scripted(&["aws-profile", "work"]);
+    let credential = auth
+        .login(profile_interaction.clone())
+        .expect("login")
+        .await
+        .unwrap();
+    let mut expected_env = ProviderEnv::new();
+    expected_env.insert("AWS_PROFILE".to_string(), "work".to_string());
+    assert_eq!(
+        credential,
+        ApiKeyCredential {
+            key: None,
+            env: Some(expected_env),
+        }
+    );
+    let events = profile_interaction.events.lock().unwrap().clone();
+    match &events[0] {
+        AuthEvent::Info { links, .. } => assert!(links.iter().any(|link| {
+            link.label
+                .as_deref()
+                .is_some_and(|label| label.contains("AWS credential provider chain"))
+        })),
+        other => panic!("expected info event, got {other:?}"),
+    }
+
+    let mut credential_env = ProviderEnv::new();
+    credential_env.insert("AWS_PROFILE".to_string(), "work".to_string());
+    let resolved = auth
+        .resolve(auth_input(
+            fake_auth_context(&[], &[]),
+            Some(ApiKeyCredential {
+                key: None,
+                env: Some(credential_env.clone()),
+            }),
+        ))
+        .await
+        .unwrap()
+        .expect("configured");
+    assert_eq!(resolved.auth, Default::default());
+    assert_eq!(resolved.env, Some(credential_env));
+}
+
+#[tokio::test]
+async fn reports_bedrock_as_configured_from_ambient_aws_credentials_without_an_api_key() {
+    use pi_core::ai::providers::amazon_bedrock::amazon_bedrock_provider;
+
+    let models = Arc::new(Models::new(CreateModelsOptions {
+        auth_context: Some(fake_auth_context(&[("AWS_PROFILE", "dev")], &[])),
+        ..Default::default()
+    }));
+    models.set_provider(amazon_bedrock_provider());
+    let model = models.get_models(Some("amazon-bedrock"))[0].clone();
+
+    let result = models
+        .get_auth(&model.provider, None, None)
+        .await
+        .unwrap()
+        .expect("configured");
+    assert_eq!(result.auth, Default::default());
+    assert_eq!(result.source.as_deref(), Some("AWS_PROFILE"));
+
+    let unconfigured = Arc::new(Models::new(CreateModelsOptions {
+        auth_context: Some(fake_auth_context(&[], &[])),
+        ..Default::default()
+    }));
+    unconfigured.set_provider(amazon_bedrock_provider());
+    assert!(
+        unconfigured
+            .get_auth("amazon-bedrock", None, None)
+            .await
+            .unwrap()
+            .is_none()
+    );
+}

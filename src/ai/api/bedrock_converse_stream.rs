@@ -1927,6 +1927,79 @@ mod tests {
         assert!(date.contains('T'));
     }
 
+    // ------------------------------------------------------------------
+    // Credential priority (bedrock-credentials.test.ts cases, observed on
+    // the dispatch config).
+
+    #[test]
+    fn prefers_explicit_and_scoped_profiles_over_ambient_aws_access_keys() {
+        let _guard = env_lock();
+        set_env("AWS_ACCESS_KEY_ID", "AKIAEXAMPLE");
+        set_env("AWS_SECRET_ACCESS_KEY", "secretexample");
+        let model = bedrock_model("us.anthropic.claude-opus-4-8");
+
+        let options = BedrockOptions {
+            profile: Some("explicit-profile".to_string()),
+            ..base_options()
+        };
+        let config = dispatch_config(&model, options);
+        assert_eq!(config.profile.as_deref(), Some("explicit-profile"));
+        assert!(config.credentials.is_none());
+
+        let mut env = ProviderEnv::new();
+        env.insert("AWS_PROFILE".to_string(), "scoped-profile".to_string());
+        let options = BedrockOptions {
+            base: StreamOptions {
+                base: ProviderRequestOptions {
+                    env: Some(env),
+                    ..Default::default()
+                },
+                ..base_options().base
+            },
+            ..base_options()
+        };
+        let config = dispatch_config(&model, options);
+        assert_eq!(config.profile.as_deref(), Some("scoped-profile"));
+        assert!(config.credentials.is_none());
+        remove_env("AWS_ACCESS_KEY_ID");
+        remove_env("AWS_SECRET_ACCESS_KEY");
+    }
+
+    #[test]
+    fn uses_ambient_aws_access_keys_when_no_profile_is_configured() {
+        let _guard = env_lock();
+        remove_env("AWS_PROFILE");
+        set_env("AWS_ACCESS_KEY_ID", "AKIAEXAMPLE");
+        set_env("AWS_SECRET_ACCESS_KEY", "secretexample");
+        let model = bedrock_model("us.anthropic.claude-opus-4-8");
+        let config = dispatch_config(&model, base_options());
+        remove_env("AWS_ACCESS_KEY_ID");
+        remove_env("AWS_SECRET_ACCESS_KEY");
+        assert_eq!(config.profile, None);
+        assert_eq!(
+            config.credentials,
+            Some(("AKIAEXAMPLE".to_string(), "secretexample".to_string(), None))
+        );
+    }
+
+    #[test]
+    fn uses_ambient_aws_access_keys_when_only_an_ambient_profile_is_set() {
+        let _guard = env_lock();
+        set_env("AWS_ACCESS_KEY_ID", "AKIAEXAMPLE");
+        set_env("AWS_SECRET_ACCESS_KEY", "secretexample");
+        set_env("AWS_PROFILE", "ambient-profile");
+        let model = bedrock_model("us.anthropic.claude-opus-4-8");
+        let config = dispatch_config(&model, base_options());
+        remove_env("AWS_ACCESS_KEY_ID");
+        remove_env("AWS_SECRET_ACCESS_KEY");
+        remove_env("AWS_PROFILE");
+        assert_eq!(config.profile.as_deref(), Some("ambient-profile"));
+        assert_eq!(
+            config.credentials,
+            Some(("AKIAEXAMPLE".to_string(), "secretexample".to_string(), None))
+        );
+    }
+
     #[test]
     fn extracts_standard_endpoint_regions() {
         assert_eq!(
@@ -2000,6 +2073,9 @@ pub struct BedrockDispatchConfig {
     pub region: Option<String>,
     pub profile: Option<String>,
     pub bearer_token: Option<String>,
+    /// Ambient static AWS keys applied to the client config. Absent when an
+    /// explicit or scoped profile takes over the credential chain.
+    pub credentials: Option<(String, String, Option<String>)>,
 }
 
 /// Port of the client-config resolution in `stream`.
@@ -2032,6 +2108,11 @@ pub(crate) fn resolve_dispatch_config(
     );
     if use_explicit_endpoint {
         config.endpoint = Some(model.base_url.clone());
+    }
+    // A profile explicitly configured through pi's auth flow must win over
+    // ambient AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY (#6957).
+    if options_profile.is_none() {
+        config.credentials = static_credentials(env);
     }
 
     // Region resolution: ARN-embedded > explicit option > env vars >
@@ -2191,6 +2272,16 @@ fn resolve_wire_target(
         "/model/{}/converse-stream",
         crate::ai::utils::sigv4::uri_encode(&model.id, true)
     );
+    // An explicit/scoped profile owns the credential chain; an ambient
+    // profile still lets ambient static keys through (TS #6957 semantics).
+    let options_profile = options.profile.clone().or_else(|| {
+        options
+            .base
+            .base
+            .env
+            .as_ref()
+            .and_then(|env| env.get("AWS_PROFILE").cloned())
+    });
     let auth = if let Some(token) = config.bearer_token {
         WireAuth::Bearer(token)
     } else if get_provider_env_value("AWS_BEDROCK_SKIP_AUTH", env).as_deref() == Some("1") {
@@ -2199,7 +2290,9 @@ fn resolve_wire_target(
             secret_access_key: "dummy-secret-key".to_string(),
             session_token: None,
         }
-    } else if let Some((access, secret, token)) = static_credentials(env) {
+    } else if options_profile.is_none()
+        && let Some((access, secret, token)) = static_credentials(env)
+    {
         WireAuth::SigV4 {
             access_key_id: access,
             secret_access_key: secret,

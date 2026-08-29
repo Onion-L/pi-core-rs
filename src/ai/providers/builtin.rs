@@ -489,15 +489,19 @@ const UNIFORM_OTHER: &[UniformApiFactory] = &[
 /// in the all.ts order (minus `amazonBedrockProvider` and `radiusProvider`,
 /// which land with their modules).
 pub fn builtin_providers() -> Vec<Arc<dyn Provider>> {
-    let mut providers: Vec<Arc<dyn Provider>> = UNIFORM_OPENAI_COMPLETIONS
-        .iter()
-        .map(|spec| uniform_provider(spec, openai_completions_api))
-        .chain(
-            UNIFORM_OTHER
-                .iter()
-                .map(|(spec, api)| uniform_provider(spec, *api)),
-        )
-        .collect();
+    let mut providers: Vec<Arc<dyn Provider>> =
+        vec![crate::ai::providers::amazon_bedrock::amazon_bedrock_provider()];
+    providers.extend(
+        UNIFORM_OPENAI_COMPLETIONS
+            .iter()
+            .map(|spec| uniform_provider(spec, openai_completions_api))
+            .chain(
+                UNIFORM_OTHER
+                    .iter()
+                    .map(|(spec, api)| uniform_provider(spec, *api)),
+            )
+            .collect::<Vec<_>>(),
+    );
     providers.push(fireworks_provider());
     providers.push(github_copilot_provider());
     providers.push(opencode_provider());
