@@ -568,7 +568,7 @@ pub struct AssistantMessage {
 
 /// Port of `ToolResultMessage<TDetails>`. Tool details are provider- or
 /// tool-specific values carried as JSON.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolResultMessage {
     pub role: RoleToolResult,

@@ -95,8 +95,15 @@ fn os_release() -> String {
 mod tests {
     use super::*;
 
+    // The cleanup registry is process-global; serialize the tests that touch
+    // it.
+    static REGISTRY_LOCK: Mutex<()> = Mutex::new(());
+
     #[test]
     fn session_resources_register_run_and_unregister() {
+        let _registry_guard = REGISTRY_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let calls: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let calls_for_cleanup = Arc::clone(&calls);
         let unregister = register_session_resource_cleanup(Arc::new(move |session_id| {
@@ -115,6 +122,9 @@ mod tests {
 
     #[test]
     fn session_resource_panics_are_collected() {
+        let _registry_guard = REGISTRY_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let unregister = register_session_resource_cleanup(Arc::new(|_| {
             panic!("boom");
         }));

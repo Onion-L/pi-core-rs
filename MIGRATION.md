@@ -57,8 +57,8 @@ upstream package).
 | `src/api/bedrock-converse-stream.ts` | | pending |
 | `src/api/cloudflare-gateway-binding.ts` | | pending |
 | `src/api/cloudflare.ts` | | pending |
-| `src/api/constrained-sampling.ts` | | pending |
-| `src/api/github-copilot-headers.ts` | | pending |
+| `src/api/constrained-sampling.ts` | `src/ai/api/constrained-sampling.rs` | done |
+| `src/api/github-copilot-headers.ts` | `src/ai/api/github-copilot-headers.rs` | done |
 | `src/api/google-generative-ai.lazy.ts` | | pending |
 | `src/api/google-generative-ai.ts` | | pending |
 | `src/api/google-shared.ts` | | pending |
@@ -79,8 +79,8 @@ upstream package).
 | `src/api/openrouter-images.ts` | | pending |
 | `src/api/pi-messages.lazy.ts` | | pending |
 | `src/api/pi-messages.ts` | | pending |
-| `src/api/simple-options.ts` | | pending |
-| `src/api/transform-messages.ts` | | pending |
+| `src/api/simple-options.ts` | `src/ai/api/simple-options.rs` | done |
+| `src/api/transform-messages.ts` | `src/ai/api/transform-messages.rs` | done |
 | `src/auth/context.ts` | `src/ai/auth/context.rs` | done |
 | `src/auth/credential-store.ts` | `src/ai/auth/credential_store.rs` | done |
 | `src/auth/helpers.ts` | `src/ai/auth/helpers.rs` | done |
