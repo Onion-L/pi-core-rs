@@ -16,3 +16,4 @@ pub mod retry;
 pub mod sanitize_unicode;
 pub mod text;
 pub mod uuid;
+pub mod validation;

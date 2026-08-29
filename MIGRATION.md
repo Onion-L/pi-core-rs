@@ -224,7 +224,7 @@ upstream package).
 | `src/utils/text.ts` | `src/ai/utils/text.rs` | done |
 | `src/utils/typebox-helpers.ts` | | pending |
 | `src/utils/uuid.ts` | `src/ai/utils/uuid.rs` | done |
-| `src/utils/validation.ts` | | pending |
+| `src/utils/validation.ts` | `src/ai/utils/validation.rs` | done |
 
 ### Tests
 
