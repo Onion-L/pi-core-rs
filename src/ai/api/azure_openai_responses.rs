@@ -393,26 +393,39 @@ async fn run_stream(
     }
 
     let (base_url, api_version) = resolve_azure_config(model, options)?;
-    let mut headers: Vec<(String, String)> = vec![
-        (
-            "User-Agent".to_string(),
-            crate::ai::session_resources::get_pi_user_agent(),
-        ),
-        ("api-key".to_string(), api_key),
-        ("content-type".to_string(), "application/json".to_string()),
-    ];
+    let mut merged: crate::ai::types::ProviderHeaders = Default::default();
+    merged.insert(
+        "User-Agent".to_string(),
+        Some(crate::ai::session_resources::get_pi_user_agent()),
+    );
     if let Some(model_headers) = &model.headers {
         for (name, value) in model_headers {
-            headers.push((name.clone(), value.clone()));
+            merged.insert(name.clone(), Some(value.clone()));
         }
     }
     if let Some(options_headers) = options.and_then(|options| options.base.base.headers.as_ref()) {
         for (name, value) in options_headers {
-            if let Some(value) = value {
-                headers.push((name.clone(), value.clone()));
-            }
+            merged.insert(name.clone(), value.clone());
         }
     }
+
+    // The AzureOpenAI SDK deletes a default header named by a null entry —
+    // including its own `api-key` auth header — and a non-null entry
+    // replaces it, so SDK auth is only sent when the merged headers leave
+    // `api-key` unset. The SDK matches header names case-insensitively.
+    let mut headers: Vec<(String, String)> = Vec::new();
+    if !merged
+        .keys()
+        .any(|name| name.eq_ignore_ascii_case("api-key"))
+    {
+        headers.push(("api-key".to_string(), api_key));
+    }
+    for (name, value) in merged {
+        if let Some(value) = value {
+            headers.push((name, value));
+        }
+    }
+    headers.push(("content-type".to_string(), "application/json".to_string()));
 
     let fetch = options
         .and_then(|options| options.base.base.fetch.clone())

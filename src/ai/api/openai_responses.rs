@@ -210,8 +210,18 @@ fn build_request_headers(
         }
     }
 
-    let mut flat: Vec<(String, String)> =
-        vec![("authorization".to_string(), format!("Bearer {api_key}"))];
+    // The OpenAI SDK deletes a default header named by a null entry —
+    // including its own `Authorization: Bearer <key>` auth header — and a
+    // non-null entry replaces it, so SDK auth is only sent when the merged
+    // headers leave `authorization` unset. The SDK matches header names
+    // case-insensitively.
+    let mut flat: Vec<(String, String)> = Vec::new();
+    if !headers
+        .keys()
+        .any(|name| name.eq_ignore_ascii_case("authorization"))
+    {
+        flat.push(("authorization".to_string(), format!("Bearer {api_key}")));
+    }
     for (name, value) in headers {
         if let Some(value) = value {
             flat.push((name, value));
