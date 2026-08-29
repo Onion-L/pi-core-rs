@@ -97,8 +97,8 @@ upstream package).
 | `src/auth/oauth/xai.ts` | `src/ai/auth/oauth/xai.rs` | done (injectable transport + clock replace global fetch and `vi.setSystemTime`) |
 | `src/auth/resolve.ts` | `src/ai/auth/resolve.rs` | done |
 | `src/auth/types.ts` | `src/ai/auth/types.rs` | done |
-| `src/bedrock-provider.ts` | | pending |
-| `src/bun-oauth.ts` | | pending |
+| `src/bedrock-provider.ts` | | exception (Bun static-embed module object; the Rust adapter is `src/ai/providers/apis.rs::bedrock_converse_stream_api`) |
+| `src/bun-oauth.ts` | | exception (Bun binary loader registration; `registerBundledOAuthFlowLoaders` has no Rust counterpart — flows link statically, documented in `src/ai/auth/oauth/load.rs`) |
 | `src/cli.ts` | | pending |
 | `src/compat.ts` | | pending |
 | `src/compat/extension-oauth-types.ts` | `src/ai/compat.rs` | done |
@@ -111,7 +111,7 @@ upstream package).
 | `src/index.ts` | | pending |
 | `src/legacy-api-aliases.ts` | | pending |
 | `src/model-catalog.ts` | `src/ai/model_catalog.rs` | done (identity helper; TS generics are compile-time only) |
-| `src/models-store.ts` | `src/ai/models_store.rs` | pending |
+| `src/models-store.ts` | `src/ai/models_store.rs` | done (exercised through the models-runtime refresh tests) |
 | `src/models.generated.ts` | `src/ai/models_generated.rs (+ src/ai/data/models.generated.json via scripts/oracle/export-model-catalog.mts)` | done |
 | `src/models.ts` | `src/ai/models.rs` | done |
 | `src/oauth.ts` | `src/ai/compat.rs (type re-exports)` | done |
@@ -181,7 +181,7 @@ upstream package).
 | `src/providers/qwen-token-plan-individual.ts` | `src/ai/providers/builtin.rs` | done |
 | `src/providers/qwen-token-plan.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
 | `src/providers/qwen-token-plan.ts` | `src/ai/providers/builtin.rs` | done |
-| `src/providers/radius-config.ts` | | pending |
+| `src/providers/radius-config.ts` | `src/ai/providers/radius_config.rs` | done (incl. `loadRadiusGatewayConfig`) |
 | `src/providers/radius.ts` | `src/ai/providers/radius.rs` | done |
 | `src/providers/together.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
 | `src/providers/together.ts` | `src/ai/providers/builtin.rs` | done |
