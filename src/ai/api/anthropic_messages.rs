@@ -1796,7 +1796,9 @@ fn is_oauth_token_inner(api_key: Option<&str>) -> bool {
 fn anthropic_tool_choice_from_simple(choice: crate::ai::types::ToolChoice) -> AnthropicToolChoice {
     match choice {
         crate::ai::types::ToolChoice::Auto => AnthropicToolChoice::Auto,
+        crate::ai::types::ToolChoice::Any => AnthropicToolChoice::Any,
         crate::ai::types::ToolChoice::None => AnthropicToolChoice::None,
+        crate::ai::types::ToolChoice::Tool { name } => AnthropicToolChoice::Tool { name },
     }
 }
 

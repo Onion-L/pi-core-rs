@@ -3,6 +3,7 @@
 
 pub mod anthropic_messages;
 pub mod azure_openai_responses;
+pub mod bedrock_converse_stream;
 pub mod cloudflare;
 pub mod cloudflare_gateway_binding;
 pub mod constrained_sampling;

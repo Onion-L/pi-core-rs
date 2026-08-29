@@ -25,6 +25,7 @@ tokio-util = "0.7"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots", "stream", "json", "gzip"] }
 sha2 = "0.11.0"
 indexmap = { version = "2", features = ["serde"] }
+base64 = "0.22"
 
 [dev-dependencies]
 serde_json = { version = "1", features = ["preserve_order"] }

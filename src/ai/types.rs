@@ -192,12 +192,58 @@ pub type ProviderId = String;
 /// Port of `ImagesProviderId`.
 pub type ImagesProviderId = String;
 
-/// Port of `ToolChoice`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
+/// Port of `ToolChoice`: `"auto" | "any" | "none" | { type: "tool"; name }`.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ToolChoice {
     Auto,
+    Any,
     None,
+    Tool { name: String },
+}
+
+impl serde::Serialize for ToolChoice {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            ToolChoice::Auto => serializer.serialize_str("auto"),
+            ToolChoice::Any => serializer.serialize_str("any"),
+            ToolChoice::None => serializer.serialize_str("none"),
+            ToolChoice::Tool { name } => {
+                use serde::ser::SerializeMap;
+                let mut map = serializer.serialize_map(Some(2))?;
+                map.serialize_entry("type", "tool")?;
+                map.serialize_entry("name", name)?;
+                map.end()
+            }
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ToolChoice {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        #[serde(untagged)]
+        enum Repr {
+            Str(String),
+            Tool {
+                #[serde(rename = "type")]
+                kind: String,
+                name: String,
+            },
+        }
+        match Repr::deserialize(deserializer)? {
+            Repr::Str(value) => match value.as_str() {
+                "auto" => Ok(ToolChoice::Auto),
+                "any" => Ok(ToolChoice::Any),
+                "none" => Ok(ToolChoice::None),
+                other => Err(serde::de::Error::unknown_variant(
+                    other,
+                    &["auto", "any", "none"],
+                )),
+            },
+            Repr::Tool { kind, name } if kind == "tool" => Ok(ToolChoice::Tool { name }),
+            Repr::Tool { kind, .. } => Err(serde::de::Error::unknown_variant(&kind, &["tool"])),
+        }
+    }
 }
 
 /// Port of `ThinkingLevel`.
