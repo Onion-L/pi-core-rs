@@ -9,4 +9,5 @@ pub mod cloudflare_stream;
 pub mod cloudflare_workers_ai;
 pub mod faux;
 pub mod google_vertex;
+pub mod radius;
 pub mod radius_config;

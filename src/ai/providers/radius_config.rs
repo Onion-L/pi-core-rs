@@ -125,6 +125,59 @@ fn radius_gateway_model(value: &Value) -> Option<RadiusGatewayModel> {
     })
 }
 
+/// Port of the radius-local `truncateHttpBody`: trimmed and capped at 512
+/// chars with an ellipsis.
+fn truncate_http_body(body: &str) -> String {
+    let trimmed = body.trim();
+    if trimmed.chars().count() > 512 {
+        format!("{}\u{2026}", trimmed.chars().take(512).collect::<String>())
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// Port of `loadRadiusGatewayConfig`: fetches `{gateway}/v1/config`. The
+/// TypeScript global `fetch` maps to an injectable transport defaulting to
+/// the reqwest-backed [`crate::ai::utils::reqwest_fetch::default_fetch`];
+/// like the other ported transports it cannot observe the signal, so a
+/// pre-flight cancellation check stands in for signal forwarding.
+pub async fn load_radius_gateway_config(
+    gateway: &str,
+    api_key: Option<&str>,
+    signal: Option<&tokio_util::sync::CancellationToken>,
+    fetch: Option<std::sync::Arc<dyn crate::ai::utils::http::HttpFetch>>,
+) -> Result<RadiusGatewayConfig, String> {
+    if signal.is_some_and(|signal| signal.is_cancelled()) {
+        return Err("The operation was aborted".to_string());
+    }
+    let mut headers = vec![("accept".to_string(), "application/json".to_string())];
+    if let Some(api_key) = api_key {
+        headers.push(("authorization".to_string(), format!("Bearer {api_key}")));
+    }
+    let fetch = fetch.unwrap_or_else(crate::ai::utils::reqwest_fetch::default_fetch);
+    let response = fetch
+        .fetch(crate::ai::utils::http::HttpRequest {
+            method: crate::ai::utils::http::HttpMethod::Get,
+            url: format!("{gateway}/v1/config"),
+            headers,
+            body: crate::ai::utils::http::HttpBody::Empty,
+        })
+        .await
+        .map_err(|error| error.to_string())?;
+    let status = response.status;
+    let text = crate::ai::utils::http::collect_text(response).await;
+    if !(200..300).contains(&status) {
+        return Err(format!(
+            "Could not load Radius config from {gateway}: {status}: {}",
+            truncate_http_body(&text)
+        ));
+    }
+    let config: Value = serde_json::from_str(&text)
+        .map_err(|_| "Invalid Radius config from {gateway}".to_string())?;
+    sanitize_radius_gateway_config(&config)
+        .ok_or_else(|| format!("Invalid Radius config from {gateway}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

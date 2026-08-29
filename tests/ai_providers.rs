@@ -337,10 +337,13 @@ async fn builtin_models_registers_every_builtin_provider_with_models() {
 
     assert!(models.get_models(None).len() > 500);
 
-    // Static providers list models immediately; radius (purely dynamic) is
-    // not registered yet and lands with its provider port.
+    // Static providers list models immediately; radius is purely dynamic.
     for provider in &providers {
         let list = models.get_models(Some(provider.id()));
+        if provider.id() == "radius" {
+            assert!(list.is_empty());
+            continue;
+        }
         assert!(!list.is_empty(), "no models for {}", provider.id());
         assert!(list.iter().all(|m| m.provider == provider.id()));
     }

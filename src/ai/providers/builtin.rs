@@ -510,6 +510,9 @@ pub fn builtin_providers() -> Vec<Arc<dyn Provider>> {
     providers.push(google_vertex_provider());
     providers.push(cloudflare_ai_gateway_provider());
     providers.push(cloudflare_workers_ai_provider());
+    providers.push(crate::ai::providers::radius::radius_provider(
+        crate::ai::providers::radius::RadiusProviderOptions::default(),
+    ));
     // all.ts lists the providers in id order.
     providers.sort_by(|a, b| a.id().cmp(b.id()));
     providers

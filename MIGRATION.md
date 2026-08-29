@@ -115,7 +115,7 @@ upstream package).
 | `src/models.generated.ts` | `src/ai/models_generated.rs (+ src/ai/data/models.generated.json via scripts/oracle/export-model-catalog.mts)` | done |
 | `src/models.ts` | `src/ai/models.rs` | done |
 | `src/oauth.ts` | `src/ai/compat.rs (type re-exports)` | done |
-| `src/providers/all.ts` | `src/ai/providers/builtin.rs` | done (amazon-bedrock and radius factories land with their modules; noted in the module) |
+| `src/providers/all.ts` | `src/ai/providers/builtin.rs` | done (the amazon-bedrock factory lands with the bedrock converse-stream module; noted in the module) |
 | `src/providers/amazon-bedrock.models.ts` | | pending |
 | `src/providers/amazon-bedrock.ts` | | pending |
 | `src/providers/ant-ling.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
@@ -182,7 +182,7 @@ upstream package).
 | `src/providers/qwen-token-plan.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
 | `src/providers/qwen-token-plan.ts` | `src/ai/providers/builtin.rs` | done |
 | `src/providers/radius-config.ts` | | pending |
-| `src/providers/radius.ts` | | pending |
+| `src/providers/radius.ts` | `src/ai/providers/radius.rs` | done |
 | `src/providers/together.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
 | `src/providers/together.ts` | `src/ai/providers/builtin.rs` | done |
 | `src/providers/vercel-ai-gateway.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
