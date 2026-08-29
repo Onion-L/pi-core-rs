@@ -81,10 +81,10 @@ upstream package).
 | `src/api/pi-messages.ts` | | pending |
 | `src/api/simple-options.ts` | | pending |
 | `src/api/transform-messages.ts` | | pending |
-| `src/auth/context.ts` | | pending |
-| `src/auth/credential-store.ts` | | pending |
-| `src/auth/helpers.ts` | | pending |
-| `src/auth/oauth/anthropic.ts` | | pending |
+| `src/auth/context.ts` | `src/ai/auth/context.rs` | done |
+| `src/auth/credential-store.ts` | `src/ai/auth/credential_store.rs` | done |
+| `src/auth/helpers.ts` | `src/ai/auth/helpers.rs` | done |
+| `src/auth/oauth/anthropic.ts` | | pending (with providers, M3) |
 | `src/auth/oauth/device-code.ts` | | pending |
 | `src/auth/oauth/github-copilot.ts` | | pending |
 | `src/auth/oauth/kimi-coding.ts` | | pending |
@@ -95,8 +95,8 @@ upstream package).
 | `src/auth/oauth/pkce.ts` | | pending |
 | `src/auth/oauth/radius.ts` | | pending |
 | `src/auth/oauth/xai.ts` | | pending |
-| `src/auth/resolve.ts` | | pending |
-| `src/auth/types.ts` | | pending |
+| `src/auth/resolve.ts` | `src/ai/auth/resolve.rs` | done |
+| `src/auth/types.ts` | `src/ai/auth/types.rs` | done |
 | `src/bedrock-provider.ts` | | pending |
 | `src/bun-oauth.ts` | | pending |
 | `src/cli.ts` | | pending |
@@ -110,10 +110,10 @@ upstream package).
 | `src/images.ts` | | pending |
 | `src/index.ts` | | pending |
 | `src/legacy-api-aliases.ts` | | pending |
-| `src/model-catalog.ts` | | pending |
-| `src/models-store.ts` | | pending |
+| `src/model-catalog.ts` | `src/ai/model_catalog.rs` | done (identity helper; TS generics are compile-time only) |
+| `src/models-store.ts` | `src/ai/models_store.rs` | pending |
 | `src/models.generated.ts` | | pending |
-| `src/models.ts` | | pending |
+| `src/models.ts` | `src/ai/models.rs` | done |
 | `src/oauth.ts` | | pending |
 | `src/providers/all.ts` | | pending |
 | `src/providers/amazon-bedrock.models.ts` | | pending |
@@ -136,7 +136,7 @@ upstream package).
 | `src/providers/cloudflare-workers-ai.ts` | | pending |
 | `src/providers/deepseek.models.ts` | | pending |
 | `src/providers/deepseek.ts` | | pending |
-| `src/providers/faux.ts` | | pending |
+| `src/providers/faux.ts` | `src/ai/providers/faux.rs` | done |
 | `src/providers/fireworks.models.ts` | | pending |
 | `src/providers/fireworks.ts` | | pending |
 | `src/providers/github-copilot.models.ts` | | pending |
@@ -222,7 +222,7 @@ upstream package).
 | `src/utils/sanitize-unicode.ts` | `src/ai/utils/sanitize_unicode.rs` | done |
 | `src/utils/sleep.ts` | `src/ai/utils/abort.rs (abortable_sleep)` | done |
 | `src/utils/text.ts` | `src/ai/utils/text.rs` | done |
-| `src/utils/typebox-helpers.ts` | | pending |
+| `src/utils/typebox-helpers.ts` | `folded into tool schema handling (validation.rs); StringEnum is a schema-shape helper` | done |
 | `src/utils/uuid.ts` | `src/ai/utils/uuid.rs` | done |
 | `src/utils/validation.ts` | `src/ai/utils/validation.rs` | done |
 

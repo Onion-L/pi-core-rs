@@ -1182,7 +1182,7 @@ pub struct ModelCost {
 }
 
 /// Port of `Model<TApi>`.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Model {
     pub id: String,
@@ -1250,7 +1250,7 @@ pub struct ImagesModel {
 pub type FetchFunction = Arc<dyn crate::ai::utils::http::HttpFetch>;
 
 /// Port of `ProviderRequestOptions<TModel>`.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct ProviderRequestOptions {
     pub signal: Option<tokio_util::sync::CancellationToken>,
     /// Explicit parent context for telemetry produced by this logical request.
@@ -1286,7 +1286,7 @@ pub type OnResponseCallback =
     Arc<dyn Fn(&ProviderResponse, &Model) -> futures::future::BoxFuture<'static, ()> + Send + Sync>;
 
 /// Port of `StreamOptions`.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct StreamOptions {
     pub base: ProviderRequestOptions,
     pub temperature: Option<f64>,
@@ -1300,7 +1300,7 @@ pub struct StreamOptions {
 }
 
 /// Port of `SimpleStreamOptions`.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct SimpleStreamOptions {
     pub base: StreamOptions,
     pub tool_choice: Option<ToolChoice>,

@@ -3,6 +3,9 @@
 //! Per-module porting status lives in `MIGRATION.md` at the repository root.
 
 pub mod auth;
+pub mod model_catalog;
+pub mod models;
+pub mod models_store;
 pub mod providers;
 pub mod types;
 pub mod utils;
