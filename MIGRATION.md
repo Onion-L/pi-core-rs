@@ -72,11 +72,11 @@ upstream package).
 | `src/api/openai-completions.lazy.ts` | | pending |
 | `src/api/openai-completions.ts` | `src/ai/api/openai_completions.rs` | done |
 | `src/api/openai-prompt-cache.ts` | `src/ai/api/openai_completions.rs` | done |
-| `src/api/openai-responses-shared.ts` | | pending |
+| `src/api/openai-responses-shared.ts` | `src/ai/api/openai_responses_shared.rs` | done |
 | `src/api/openai-responses.lazy.ts` | | pending |
 | `src/api/openai-responses.ts` | `src/ai/api/openai_responses.rs` | done |
 | `src/api/openrouter-images.lazy.ts` | | pending |
-| `src/api/openrouter-images.ts` | | pending |
+| `src/api/openrouter-images.ts` | `src/ai/api/openrouter_images.rs` | done (transport cannot observe the abort token; a pre-flight cancellation check replaces OpenAI-SDK signal handling) |
 | `src/api/pi-messages.lazy.ts` | | pending |
 | `src/api/pi-messages.ts` | `src/ai/api/pi_messages.rs` | done |
 | `src/api/simple-options.ts` | `src/ai/api/simple-options.rs` | done |
@@ -337,7 +337,7 @@ upstream package).
 | `test/openai-responses-tool-result-images.test.ts` | | pending |
 | `test/openrouter-cache-control-models.test.ts` | | pending |
 | `test/openrouter-cache-write-repro.test.ts` | | pending |
-| `test/openrouter-images.test.ts` | | pending |
+| `test/openrouter-images.test.ts` | `tests/ai_openrouter_images.rs` | done (mock at the `HttpFetch` transport replaces the OpenAI-SDK mock) |
 | `test/openrouter-oauth.test.ts` | | pending |
 | `test/openrouter-reasoning-options.test.ts` | | pending |
 | `test/overflow.test.ts` | | pending |

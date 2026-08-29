@@ -1285,6 +1285,23 @@ pub type OnPayloadCallback = Arc<
 pub type OnResponseCallback =
     Arc<dyn Fn(&ProviderResponse, &Model) -> futures::future::BoxFuture<'static, ()> + Send + Sync>;
 
+/// Port of the images `onPayload` callback (`ImagesOptions` flavor).
+pub type OnPayloadCallbackImages = Arc<
+    dyn Fn(
+            serde_json::Value,
+            &ImagesModel,
+        ) -> futures::future::BoxFuture<'static, Option<serde_json::Value>>
+        + Send
+        + Sync,
+>;
+
+/// Port of the images `onResponse` callback (`ImagesOptions` flavor).
+pub type OnResponseCallbackImages = Arc<
+    dyn Fn(&ProviderResponse, &ImagesModel) -> futures::future::BoxFuture<'static, ()>
+        + Send
+        + Sync,
+>;
+
 /// Port of `StreamOptions`.
 #[derive(Clone, Default)]
 pub struct StreamOptions {
