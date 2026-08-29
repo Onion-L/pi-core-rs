@@ -2,6 +2,7 @@
 //! request-building helpers.
 
 pub mod anthropic_messages;
+pub mod azure_openai_responses;
 pub mod constrained_sampling;
 pub mod github_copilot_headers;
 pub mod openai_completions;

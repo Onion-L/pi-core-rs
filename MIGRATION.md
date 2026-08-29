@@ -52,7 +52,7 @@ upstream package).
 | `src/api/anthropic-messages.lazy.ts` | | pending |
 | `src/api/anthropic-messages.ts` | `src/ai/api/anthropic_messages.rs` | done |
 | `src/api/azure-openai-responses.lazy.ts` | | pending |
-| `src/api/azure-openai-responses.ts` | | pending |
+| `src/api/azure-openai-responses.ts` | `src/ai/api/azure_openai_responses.rs` | done |
 | `src/api/bedrock-converse-stream.lazy.ts` | | pending |
 | `src/api/bedrock-converse-stream.ts` | | pending |
 | `src/api/cloudflare-gateway-binding.ts` | | pending |
