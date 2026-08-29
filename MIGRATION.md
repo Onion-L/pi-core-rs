@@ -130,8 +130,8 @@ upstream package).
 | `src/providers/cerebras.ts` | | pending |
 | `src/providers/cloudflare-ai-gateway.models.ts` | | pending |
 | `src/providers/cloudflare-ai-gateway.ts` | | pending |
-| `src/providers/cloudflare-auth.ts` | | pending |
-| `src/providers/cloudflare-stream.ts` | | pending |
+| `src/providers/cloudflare-auth.ts` | `src/ai/providers/cloudflare_auth.rs` | done |
+| `src/providers/cloudflare-stream.ts` | `src/ai/providers/cloudflare_stream.rs` | done |
 | `src/providers/cloudflare-workers-ai.models.ts` | | pending |
 | `src/providers/cloudflare-workers-ai.ts` | | pending |
 | `src/providers/deepseek.models.ts` | | pending |
@@ -263,8 +263,8 @@ upstream package).
 | `test/bedrock-utils.ts` | | pending |
 | `test/cache-retention.test.ts` | | pending |
 | `test/cloudflare-gateway-binding.test.ts` | `tests/ai_cloudflare_gateway_binding.rs` | done (Request/signal-specific cases documented as N/A in the test header) |
-| `test/cloudflare-stream.test.ts` | | pending |
-| `test/cloudflare-utils.ts` | | pending |
+| `test/cloudflare-stream.test.ts` | `tests/ai_cloudflare_stream.rs` | done (third case covers the TS `??` placeholder-fallback branch) |
+| `test/cloudflare-utils.ts` | | pending (live-credential helper; lands with the live cloudflare provider tests) |
 | `test/codex-websocket-cached-probe.ts` | | pending |
 | `test/compat-env.test.ts` | | pending |
 | `test/constrained-sampling.test.ts` | | pending |
