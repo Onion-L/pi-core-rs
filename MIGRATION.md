@@ -345,7 +345,7 @@ upstream package).
 | `test/provider-error-body-passthrough.test.ts` | | pending |
 | `test/provider-error-body-regression.test.ts` | | pending |
 | `test/provider-retry.test.ts` | | pending |
-| `test/providers.test.ts` | `tests/ai_providers.rs` (+ `tests/ai_models.rs` for the dispatch-error case) | partial (builtin catalog, anthropic env precedence, cloudflare getAuth, vertex, envApiKeyAuth cases ported; bedrock, dynamic-refresh, deferred, faux-cases pending) |
+| `test/providers.test.ts` | `tests/ai_providers.rs` (+ `tests/ai_models.rs` for the dispatch-error case) | partial (builtin catalog, anthropic env precedence, cloudflare getAuth, vertex, envApiKeyAuth, dispatch, env merge, deferred fetch/cancel options, faux streams and deferred submit/poll/cancel cases ported; bedrock and dynamic-refresh-supersede cases pending) |
 | `test/qwen-token-plan-models.test.ts` | | pending |
 | `test/radius-oauth.test.ts` | `tests/ai_oauth_radius.rs` | done |
 | `test/reasoning-options.test.ts` | | pending |

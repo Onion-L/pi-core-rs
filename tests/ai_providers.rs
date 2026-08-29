@@ -562,3 +562,691 @@ async fn builtin_images_models_registers_the_openrouter_provider_with_its_catalo
         .expect("configured");
     assert_eq!(auth.auth.api_key.as_deref(), Some("or-key"));
 }
+
+// ---------------------------------------------------------------------------
+// createProvider (providers.test.ts cases).
+
+/// The `recordingStreams` helper from providers.test.ts.
+#[derive(Default)]
+struct RecordingStreams {
+    label: String,
+    calls: Arc<Mutex<Vec<String>>>,
+}
+
+impl pi_core::ai::models::ProviderStreams for RecordingStreams {
+    fn stream(
+        &self,
+        model: &pi_core::ai::types::Model,
+        _context: &pi_core::ai::types::Context,
+        _options: Option<&pi_core::ai::types::StreamOptions>,
+    ) -> pi_core::ai::utils::event_stream::AssistantMessageEventStream {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(format!("{}:{}", self.label, model.id));
+        completed_stream()
+    }
+
+    fn stream_simple(
+        &self,
+        model: &pi_core::ai::types::Model,
+        _context: &pi_core::ai::types::Context,
+        _options: Option<&pi_core::ai::types::SimpleStreamOptions>,
+    ) -> pi_core::ai::utils::event_stream::AssistantMessageEventStream {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(format!("{}:{}", self.label, model.id));
+        completed_stream()
+    }
+}
+
+fn completed_stream() -> pi_core::ai::utils::event_stream::AssistantMessageEventStream {
+    let stream = pi_core::ai::utils::event_stream::create_assistant_message_event_stream();
+    let message = pi_core::ai::providers::faux::faux_assistant_message(
+        "ok",
+        pi_core::ai::providers::faux::FauxMessageOptions::default(),
+    );
+    stream.push(pi_core::ai::types::AssistantMessageEvent::Start {
+        partial: message.clone(),
+    });
+    stream.push(pi_core::ai::types::AssistantMessageEvent::Done {
+        reason: pi_core::ai::types::DoneReason::Stop,
+        message: message.clone(),
+    });
+    stream.end(Some(message));
+    stream
+}
+
+/// The `{ apiKey: { name: "Test", resolve: async () => ({ auth: {} }) } }` auth.
+struct UnconfiguredApiKeyAuth;
+
+impl pi_core::ai::auth::types::ApiKeyAuth for UnconfiguredApiKeyAuth {
+    fn name(&self) -> &str {
+        "Test"
+    }
+    fn resolve(
+        &self,
+        _input: ApiKeyAuthInput,
+    ) -> AuthFuture<Result<Option<pi_core::ai::auth::types::AuthResult>, AuthStorageError>> {
+        Box::pin(std::future::ready(Ok(Some(
+            pi_core::ai::auth::types::AuthResult::default(),
+        ))))
+    }
+}
+
+fn plain_test_model(api: &str, id: &str, provider: &str) -> pi_core::ai::types::Model {
+    pi_core::ai::types::Model {
+        id: id.to_string(),
+        name: id.to_string(),
+        api: api.to_string(),
+        provider: provider.to_string(),
+        base_url: "https://example.test/v1".to_string(),
+        reasoning: false,
+        input: vec![pi_core::ai::types::ModelInput::Text],
+        context_window: 10_000,
+        max_tokens: 1000,
+        ..Default::default()
+    }
+}
+
+#[tokio::test]
+async fn lazily_exposes_only_declared_deferred_capabilities() {
+    // The TS case counts lazy module loads; in Rust the adapter is linked
+    // statically, so the observable contract is which capabilities exist.
+    struct DeferredOnlyStreams;
+    impl pi_core::ai::models::ProviderStreams for DeferredOnlyStreams {
+        fn stream(
+            &self,
+            _model: &pi_core::ai::types::Model,
+            _context: &pi_core::ai::types::Context,
+            _options: Option<&pi_core::ai::types::StreamOptions>,
+        ) -> pi_core::ai::utils::event_stream::AssistantMessageEventStream {
+            completed_stream()
+        }
+        fn stream_simple(
+            &self,
+            _model: &pi_core::ai::types::Model,
+            _context: &pi_core::ai::types::Context,
+            _options: Option<&pi_core::ai::types::SimpleStreamOptions>,
+        ) -> pi_core::ai::utils::event_stream::AssistantMessageEventStream {
+            completed_stream()
+        }
+        fn fetch_deferred(
+            &self,
+            model: &pi_core::ai::types::Model,
+            _handle: &pi_core::ai::types::DeferredHandle,
+            _options: Option<&pi_core::ai::types::DeferredFetchOptions>,
+        ) -> Option<pi_core::ai::utils::event_stream::AssistantMessageEventStream> {
+            Some(self.stream_simple(model, &pi_core::ai::types::Context::default(), None))
+        }
+        fn supports_deferred(&self) -> bool {
+            true
+        }
+    }
+
+    let model = plain_test_model("api-a", "model-a", "mixed");
+    let provider =
+        pi_core::ai::models::create_provider(pi_core::ai::models::CreateProviderOptions {
+            id: "mixed".to_string(),
+            name: None,
+            base_url: None,
+            headers: None,
+            auth: pi_core::ai::auth::types::ProviderAuth::api_key(Arc::new(UnconfiguredApiKeyAuth)),
+            models: vec![model.clone()],
+            fetch_models: None,
+            filter_models: None,
+            api: pi_core::ai::models::ProviderApi::Single(Arc::new(DeferredOnlyStreams)),
+        });
+    let handle = pi_core::ai::types::DeferredHandle {
+        provider: model.provider.clone(),
+        model_id: model.id.clone(),
+        api: model.api.clone(),
+        id: "response-1".to_string(),
+        ..Default::default()
+    };
+
+    assert!(provider.supports_deferred());
+    assert!(!provider.supports_cancel_deferred());
+    let result = provider
+        .fetch_deferred(&model, &handle, None)
+        .expect("fetch deferred wired")
+        .result()
+        .await;
+    assert_eq!(result.stop_reason, pi_core::ai::types::StopReason::Stop);
+}
+
+#[tokio::test]
+async fn dispatches_on_model_api_for_mixed_api_providers() {
+    let calls = Arc::new(Mutex::new(Vec::<String>::new()));
+    let mut by_api = std::collections::BTreeMap::new();
+    for (api, label) in [("api-a", "a"), ("api-b", "b")] {
+        by_api.insert(
+            api.to_string(),
+            Arc::new(RecordingStreams {
+                label: label.to_string(),
+                calls: Arc::clone(&calls),
+            }) as Arc<dyn pi_core::ai::models::ProviderStreams>,
+        );
+    }
+    let provider =
+        pi_core::ai::models::create_provider(pi_core::ai::models::CreateProviderOptions {
+            id: "mixed".to_string(),
+            name: None,
+            base_url: None,
+            headers: None,
+            auth: pi_core::ai::auth::types::ProviderAuth::api_key(Arc::new(UnconfiguredApiKeyAuth)),
+            models: vec![
+                plain_test_model("api-a", "model-a", "mixed"),
+                plain_test_model("api-b", "model-b", "mixed"),
+            ],
+            fetch_models: None,
+            filter_models: None,
+            api: pi_core::ai::models::ProviderApi::ByApi(by_api),
+        });
+    let models = Arc::new(Models::new(Default::default()));
+    models.set_provider(provider);
+
+    models
+        .complete_simple(
+            &plain_test_model("api-a", "model-a", "mixed"),
+            &pi_core::ai::types::Context::default(),
+            None,
+        )
+        .await;
+    models
+        .complete_simple(
+            &plain_test_model("api-b", "model-b", "mixed"),
+            &pi_core::ai::types::Context::default(),
+            None,
+        )
+        .await;
+    assert_eq!(
+        *calls.lock().unwrap(),
+        vec!["a:model-a".to_string(), "b:model-b".to_string()]
+    );
+}
+
+#[tokio::test]
+async fn merges_provider_resolved_env_into_stream_options() {
+    struct EnvAuth;
+    impl pi_core::ai::auth::types::ApiKeyAuth for EnvAuth {
+        fn name(&self) -> &str {
+            "Test"
+        }
+        fn resolve(
+            &self,
+            _input: ApiKeyAuthInput,
+        ) -> AuthFuture<Result<Option<pi_core::ai::auth::types::AuthResult>, AuthStorageError>>
+        {
+            Box::pin(std::future::ready(Ok(Some(
+                pi_core::ai::auth::types::AuthResult {
+                    auth: pi_core::ai::auth::types::ModelAuth {
+                        api_key: Some("provider-key".to_string()),
+                        ..Default::default()
+                    },
+                    env: Some(
+                        [("PROVIDER_ONLY", "provider"), ("SHARED", "provider")]
+                            .iter()
+                            .map(|(k, v)| (k.to_string(), v.to_string()))
+                            .collect(),
+                    ),
+                    source: None,
+                },
+            ))))
+        }
+    }
+
+    #[derive(Default)]
+    struct CapturingStreams {
+        env: Mutex<Option<pi_core::ai::types::ProviderEnv>>,
+        api_key: Mutex<Option<String>>,
+    }
+    impl pi_core::ai::models::ProviderStreams for CapturingStreams {
+        fn stream(
+            &self,
+            _model: &pi_core::ai::types::Model,
+            _context: &pi_core::ai::types::Context,
+            options: Option<&pi_core::ai::types::StreamOptions>,
+        ) -> pi_core::ai::utils::event_stream::AssistantMessageEventStream {
+            *self.env.lock().unwrap() = options.and_then(|o| o.base.env.clone());
+            *self.api_key.lock().unwrap() = options.and_then(|o| o.base.api_key.clone());
+            completed_stream()
+        }
+        fn stream_simple(
+            &self,
+            model: &pi_core::ai::types::Model,
+            context: &pi_core::ai::types::Context,
+            options: Option<&pi_core::ai::types::SimpleStreamOptions>,
+        ) -> pi_core::ai::utils::event_stream::AssistantMessageEventStream {
+            self.stream(model, context, options.map(|o| &o.base))
+        }
+    }
+
+    let capturing = Arc::new(CapturingStreams::default());
+    let provider =
+        pi_core::ai::models::create_provider(pi_core::ai::models::CreateProviderOptions {
+            id: "env-provider".to_string(),
+            name: None,
+            base_url: None,
+            headers: None,
+            auth: pi_core::ai::auth::types::ProviderAuth::api_key(Arc::new(EnvAuth)),
+            models: vec![plain_test_model("api-a", "model-a", "env-provider")],
+            fetch_models: None,
+            filter_models: None,
+            api: pi_core::ai::models::ProviderApi::Single(
+                Arc::clone(&capturing) as Arc<dyn pi_core::ai::models::ProviderStreams>
+            ),
+        });
+    let models = Arc::new(Models::new(Default::default()));
+    models.set_provider(provider);
+
+    let mut env = pi_core::ai::types::ProviderEnv::new();
+    env.insert("REQUEST_ONLY".to_string(), "request".to_string());
+    env.insert("SHARED".to_string(), "request".to_string());
+    let options = pi_core::ai::types::SimpleStreamOptions {
+        base: pi_core::ai::types::StreamOptions {
+            base: pi_core::ai::types::ProviderRequestOptions {
+                api_key: Some("request-key".to_string()),
+                env: Some(env),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    models
+        .complete_simple(
+            &plain_test_model("api-a", "model-a", "env-provider"),
+            &pi_core::ai::types::Context::default(),
+            Some(options),
+        )
+        .await;
+
+    assert_eq!(
+        capturing.api_key.lock().unwrap().as_deref(),
+        Some("request-key")
+    );
+    let mut expected = pi_core::ai::types::ProviderEnv::new();
+    expected.insert("PROVIDER_ONLY".to_string(), "provider".to_string());
+    expected.insert("REQUEST_ONLY".to_string(), "request".to_string());
+    expected.insert("SHARED".to_string(), "request".to_string());
+    assert_eq!(*capturing.env.lock().unwrap(), Some(expected));
+}
+
+#[tokio::test]
+async fn applies_resolved_request_options_to_deferred_fetch_and_cancellation() {
+    use pi_core::ai::models::{ModelsDeferredCancelOptions, ModelsDeferredFetchOptions};
+    use pi_core::ai::types::{DeferredFetchOptions, TransformHeadersFn};
+
+    struct DeferredAuth;
+    impl pi_core::ai::auth::types::ApiKeyAuth for DeferredAuth {
+        fn name(&self) -> &str {
+            "Test"
+        }
+        fn resolve(
+            &self,
+            _input: ApiKeyAuthInput,
+        ) -> AuthFuture<Result<Option<pi_core::ai::auth::types::AuthResult>, AuthStorageError>>
+        {
+            Box::pin(std::future::ready(Ok(Some(
+                pi_core::ai::auth::types::AuthResult {
+                    auth: pi_core::ai::auth::types::ModelAuth {
+                        api_key: Some("provider-key".to_string()),
+                        base_url: Some("https://resolved.test/v1".to_string()),
+                        headers: Some(
+                            [
+                                ("Authorization", Some("Bearer provider")),
+                                ("X-Shared", Some("provider")),
+                            ]
+                            .iter()
+                            .map(|(k, v)| (k.to_string(), v.map(|v| v.to_string())))
+                            .collect(),
+                        ),
+                    },
+                    env: Some(
+                        [("PROVIDER_ONLY", "provider"), ("SHARED", "provider")]
+                            .iter()
+                            .map(|(k, v)| (k.to_string(), v.to_string()))
+                            .collect(),
+                    ),
+                    source: None,
+                },
+            ))))
+        }
+    }
+
+    #[derive(Default)]
+    struct DeferredCaptureStreams {
+        fetched_model: Mutex<Option<pi_core::ai::types::Model>>,
+        fetched_options: Mutex<Option<DeferredFetchOptions>>,
+        cancelled_options: Mutex<Option<pi_core::ai::types::ProviderRequestOptions>>,
+    }
+    impl pi_core::ai::models::ProviderStreams for DeferredCaptureStreams {
+        fn stream(
+            &self,
+            _model: &pi_core::ai::types::Model,
+            _context: &pi_core::ai::types::Context,
+            _options: Option<&pi_core::ai::types::StreamOptions>,
+        ) -> pi_core::ai::utils::event_stream::AssistantMessageEventStream {
+            completed_stream()
+        }
+        fn stream_simple(
+            &self,
+            _model: &pi_core::ai::types::Model,
+            _context: &pi_core::ai::types::Context,
+            _options: Option<&pi_core::ai::types::SimpleStreamOptions>,
+        ) -> pi_core::ai::utils::event_stream::AssistantMessageEventStream {
+            completed_stream()
+        }
+        fn fetch_deferred(
+            &self,
+            model: &pi_core::ai::types::Model,
+            _handle: &pi_core::ai::types::DeferredHandle,
+            options: Option<&DeferredFetchOptions>,
+        ) -> Option<pi_core::ai::utils::event_stream::AssistantMessageEventStream> {
+            *self.fetched_model.lock().unwrap() = Some(model.clone());
+            *self.fetched_options.lock().unwrap() = options.cloned();
+            Some(completed_stream())
+        }
+        fn cancel_deferred(
+            &self,
+            _model: &pi_core::ai::types::Model,
+            _handle: &pi_core::ai::types::DeferredHandle,
+            options: Option<&pi_core::ai::types::ProviderRequestOptions>,
+        ) -> Option<
+            futures::future::BoxFuture<
+                'static,
+                Result<(), pi_core::ai::auth::resolve::ModelsError>,
+            >,
+        > {
+            *self.cancelled_options.lock().unwrap() = options.cloned();
+            Some(Box::pin(std::future::ready(Ok(()))))
+        }
+        fn supports_deferred(&self) -> bool {
+            true
+        }
+        fn supports_cancel_deferred(&self) -> bool {
+            true
+        }
+    }
+
+    let capturing = Arc::new(DeferredCaptureStreams::default());
+    let model = plain_test_model("api-a", "model-a", "deferred-provider");
+    let provider =
+        pi_core::ai::models::create_provider(pi_core::ai::models::CreateProviderOptions {
+            id: "deferred-provider".to_string(),
+            name: None,
+            base_url: None,
+            headers: None,
+            auth: pi_core::ai::auth::types::ProviderAuth::api_key(Arc::new(DeferredAuth)),
+            models: vec![model.clone()],
+            fetch_models: None,
+            filter_models: None,
+            api: pi_core::ai::models::ProviderApi::Single(
+                Arc::clone(&capturing) as Arc<dyn pi_core::ai::models::ProviderStreams>
+            ),
+        });
+    let models = Arc::new(Models::new(Default::default()));
+    models.set_provider(provider);
+    let handle = pi_core::ai::types::DeferredHandle {
+        provider: model.provider.clone(),
+        model_id: model.id.clone(),
+        api: model.api.clone(),
+        id: "response-1".to_string(),
+        ..Default::default()
+    };
+
+    let add_transformed: TransformHeadersFn = Arc::new(|mut headers| {
+        Box::pin(async move {
+            headers.insert("X-Transformed".to_string(), Some("yes".to_string()));
+            headers
+        })
+    });
+    let add_cancel: TransformHeadersFn = Arc::new(|mut headers| {
+        Box::pin(async move {
+            headers.insert("X-Cancel".to_string(), Some("yes".to_string()));
+            headers
+        })
+    });
+    let mut env = pi_core::ai::types::ProviderEnv::new();
+    env.insert("REQUEST_ONLY".to_string(), "request".to_string());
+    env.insert("SHARED".to_string(), "request".to_string());
+    let mut headers = pi_core::ai::types::ProviderHeaders::new();
+    headers.insert("X-Request".to_string(), Some("request".to_string()));
+    headers.insert("x-shared".to_string(), Some("request".to_string()));
+
+    models
+        .fetch_deferred(
+            &model,
+            &handle,
+            Some(ModelsDeferredFetchOptions {
+                base: pi_core::ai::types::ProviderRequestOptions {
+                    api_key: Some("request-key".to_string()),
+                    headers: Some(headers),
+                    env: Some(env),
+                    timeout_ms: Some(100),
+                    ..Default::default()
+                },
+                wait: Some(50),
+                transform_headers: Some(add_transformed),
+            }),
+        )
+        .await;
+    models
+        .cancel_deferred(
+            &model,
+            &handle,
+            Some(ModelsDeferredCancelOptions {
+                base: pi_core::ai::types::ProviderRequestOptions {
+                    timeout_ms: Some(200),
+                    ..Default::default()
+                },
+                transform_headers: Some(add_cancel),
+            }),
+        )
+        .await
+        .unwrap();
+
+    let fetched_model = capturing.fetched_model.lock().unwrap().clone().unwrap();
+    assert_eq!(fetched_model.base_url, "https://resolved.test/v1");
+    let fetched = capturing.fetched_options.lock().unwrap().clone().unwrap();
+    assert_eq!(fetched.wait, Some(50));
+    assert_eq!(fetched.base.timeout_ms, Some(100));
+    assert_eq!(fetched.base.api_key.as_deref(), Some("request-key"));
+    let mut expected_headers = pi_core::ai::types::ProviderHeaders::new();
+    expected_headers.insert(
+        "Authorization".to_string(),
+        Some("Bearer provider".to_string()),
+    );
+    expected_headers.insert("X-Request".to_string(), Some("request".to_string()));
+    expected_headers.insert("x-shared".to_string(), Some("request".to_string()));
+    expected_headers.insert("X-Transformed".to_string(), Some("yes".to_string()));
+    assert_eq!(fetched.base.headers, Some(expected_headers));
+    let mut expected_env = pi_core::ai::types::ProviderEnv::new();
+    expected_env.insert("PROVIDER_ONLY".to_string(), "provider".to_string());
+    expected_env.insert("REQUEST_ONLY".to_string(), "request".to_string());
+    expected_env.insert("SHARED".to_string(), "request".to_string());
+    assert_eq!(fetched.base.env, Some(expected_env));
+
+    let cancelled = capturing.cancelled_options.lock().unwrap().clone().unwrap();
+    assert_eq!(cancelled.timeout_ms, Some(200));
+    assert_eq!(cancelled.api_key.as_deref(), Some("provider-key"));
+    let mut expected_headers = pi_core::ai::types::ProviderHeaders::new();
+    expected_headers.insert(
+        "Authorization".to_string(),
+        Some("Bearer provider".to_string()),
+    );
+    expected_headers.insert("X-Shared".to_string(), Some("provider".to_string()));
+    expected_headers.insert("X-Cancel".to_string(), Some("yes".to_string()));
+    assert_eq!(cancelled.headers, Some(expected_headers));
+    let mut expected_env = pi_core::ai::types::ProviderEnv::new();
+    expected_env.insert("PROVIDER_ONLY".to_string(), "provider".to_string());
+    expected_env.insert("SHARED".to_string(), "provider".to_string());
+    assert_eq!(cancelled.env, Some(expected_env));
+}
+
+// ---------------------------------------------------------------------------
+// Faux provider through a Models collection (providers.test.ts cases).
+
+use pi_core::ai::providers::faux::{
+    FauxDeferredOptions, FauxMessageOptions, FauxResponseStep, faux_assistant_message,
+    faux_provider,
+};
+
+fn text_of(message: &pi_core::ai::types::AssistantMessage) -> String {
+    match &message.content[0] {
+        pi_core::ai::types::AssistantContent::Text(text) => text.text.clone(),
+        other => panic!("expected text content, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn streams_queued_responses_through_a_models_collection() {
+    let faux = faux_provider(Default::default());
+    let models = Arc::new(Models::new(Default::default()));
+    models.set_provider(Arc::clone(&faux.provider));
+    faux.set_responses(vec![FauxResponseStep::Message(Box::new(
+        faux_assistant_message("hello from faux", FauxMessageOptions::default()),
+    ))]);
+
+    let model = models.get_models(Some(faux.provider.id()))[0].clone();
+    let result = models
+        .complete_simple(&model, &pi_core::ai::types::Context::default(), None)
+        .await;
+    assert_eq!(result.stop_reason, pi_core::ai::types::StopReason::Stop);
+    assert_eq!(text_of(&result), "hello from faux");
+    assert_eq!(faux.state.lock().unwrap().call_count, 1);
+}
+
+#[tokio::test]
+async fn submits_polls_and_redeems_deferred_responses() {
+    let faux = faux_provider(pi_core::ai::providers::faux::RegisterFauxProviderOptions {
+        deferred: Some(FauxDeferredOptions {
+            pending_fetches: Some(1),
+            poll_after_ms: Some(25),
+        }),
+        ..Default::default()
+    });
+    let models = Arc::new(Models::new(Default::default()));
+    models.set_provider(Arc::clone(&faux.provider));
+    faux.set_responses(vec![FauxResponseStep::Message(Box::new(
+        faux_assistant_message("ready", FauxMessageOptions::default()),
+    ))]);
+    let model = faux.get_model();
+
+    let submission = models.stream_simple(
+        &model,
+        &pi_core::ai::types::Context::default(),
+        Some(pi_core::ai::types::SimpleStreamOptions {
+            deferred: Some(pi_core::ai::types::DeferredPreference::Window(
+                pi_core::ai::types::DeferredWindow::H1,
+            )),
+            ..Default::default()
+        }),
+    );
+    let deferred = submission.result().await;
+    assert_eq!(
+        deferred.stop_reason,
+        pi_core::ai::types::StopReason::Deferred
+    );
+    assert!(deferred.content.is_empty());
+    let handle = deferred.deferred.clone().expect("deferred handle");
+    assert_eq!(handle.provider, model.provider);
+    assert_eq!(handle.model_id, model.id);
+    assert_eq!(handle.api, model.api);
+    assert!(!handle.id.is_empty());
+    assert_eq!(handle.poll_after_ms, Some(25));
+
+    let pending = models.fetch_deferred(&model, &handle, None).await;
+    assert_eq!(
+        pending.stop_reason,
+        pi_core::ai::types::StopReason::Deferred
+    );
+    assert_eq!(pending.deferred, Some(handle.clone()));
+
+    let ready = models
+        .fetch_deferred(
+            &model,
+            &handle,
+            Some(pi_core::ai::models::ModelsDeferredFetchOptions {
+                wait: Some(0),
+                ..Default::default()
+            }),
+        )
+        .await;
+    assert_eq!(ready.stop_reason, pi_core::ai::types::StopReason::Stop);
+    assert_eq!(text_of(&ready), "ready");
+    assert!(ready.usage.total_tokens > 0);
+    let state = faux.state.lock().unwrap();
+    assert_eq!(state.call_count, 1);
+    assert_eq!(state.deferred_fetch_count, 2);
+}
+
+#[tokio::test]
+async fn records_cancellation_and_returns_deferred_fetch_failures_in_band() {
+    let faux = faux_provider(Default::default());
+    let models = Arc::new(Models::new(Default::default()));
+    models.set_provider(Arc::clone(&faux.provider));
+    // The TS case rejects from a response factory; the Rust factory port
+    // returns the error-shaped message a rejection would surface.
+    faux.set_responses(vec![
+        FauxResponseStep::Factory(Arc::new(|_, _, _, _| {
+            let mut message = faux_assistant_message("", FauxMessageOptions::default());
+            message.stop_reason = pi_core::ai::types::StopReason::Error;
+            message.error_message = Some("deferred failed".to_string());
+            message
+        })),
+        FauxResponseStep::Message(Box::new(faux_assistant_message(
+            "cancelled",
+            FauxMessageOptions::default(),
+        ))),
+    ]);
+    let model = faux.get_model();
+
+    let failed_submission = models
+        .complete_simple(
+            &model,
+            &pi_core::ai::types::Context::default(),
+            Some(pi_core::ai::types::SimpleStreamOptions {
+                deferred: Some(pi_core::ai::types::DeferredPreference::Enabled),
+                ..Default::default()
+            }),
+        )
+        .await;
+    let failed_handle = failed_submission.deferred.clone().expect("deferred handle");
+    let failed = models.fetch_deferred(&model, &failed_handle, None).await;
+    assert_eq!(failed.stop_reason, pi_core::ai::types::StopReason::Error);
+    assert_eq!(failed.error_message.as_deref(), Some("deferred failed"));
+
+    let cancelled_submission = models
+        .complete_simple(
+            &model,
+            &pi_core::ai::types::Context::default(),
+            Some(pi_core::ai::types::SimpleStreamOptions {
+                deferred: Some(pi_core::ai::types::DeferredPreference::Enabled),
+                ..Default::default()
+            }),
+        )
+        .await;
+    let cancelled_handle = cancelled_submission
+        .deferred
+        .clone()
+        .expect("deferred handle");
+    models
+        .cancel_deferred(&model, &cancelled_handle, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        faux.state.lock().unwrap().cancelled_deferred,
+        vec![cancelled_handle.clone()]
+    );
+    let cancelled = models.fetch_deferred(&model, &cancelled_handle, None).await;
+    assert_eq!(cancelled.stop_reason, pi_core::ai::types::StopReason::Error);
+    assert!(
+        cancelled
+            .error_message
+            .as_deref()
+            .is_some_and(|message| message.contains("was cancelled"))
+    );
+}

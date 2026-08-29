@@ -819,7 +819,7 @@ impl ProviderStreams for FauxProviderStreams {
         &self,
         request_model: &Model,
         handle: &DeferredHandle,
-        fetch_options: Option<&ProviderRequestOptions>,
+        fetch_options: Option<&crate::ai::types::DeferredFetchOptions>,
     ) -> Option<AssistantMessageEventStream> {
         let outer = create_assistant_message_event_stream();
         {
@@ -832,7 +832,7 @@ impl ProviderStreams for FauxProviderStreams {
 
         let request_model = request_model.clone();
         let handle = handle.clone();
-        let fetch_signal = fetch_options.and_then(|options| options.signal.clone());
+        let fetch_signal = fetch_options.and_then(|options| options.base.signal.clone());
         let producer = outer.clone();
         let inner = InnerStreams {
             api: self.api.clone(),
@@ -893,6 +893,14 @@ impl ProviderStreams for FauxProviderStreams {
             }
             Ok(())
         }))
+    }
+
+    fn supports_deferred(&self) -> bool {
+        true
+    }
+
+    fn supports_cancel_deferred(&self) -> bool {
+        true
     }
 }
 

@@ -73,6 +73,7 @@ pub fn build_base_options(
         session_id: options.base.session_id,
         websocket_connect_timeout_ms: options.base.websocket_connect_timeout_ms,
         metadata: options.base.metadata,
+        transform_headers: options.base.transform_headers.clone(),
     }
 }
 

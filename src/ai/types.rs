@@ -1323,7 +1323,15 @@ pub struct ImagesOptions {
     pub metadata: Option<BTreeMap<String, serde_json::Value>>,
 }
 
-/// Port of `StreamOptions`.
+/// Port of `ModelsRequestTransforms.transformHeaders`: transforms the fully
+/// assembled model/auth/request headers before provider dispatch.
+pub type TransformHeadersFn = Arc<
+    dyn Fn(ProviderHeaders) -> futures::future::BoxFuture<'static, ProviderHeaders> + Send + Sync,
+>;
+
+/// Port of `StreamOptions`, carrying the Models-level
+/// `ModelsRequestTransforms.transformHeaders` extension (applied by the
+/// `Models` collection and ignored by provider implementations).
 #[derive(Clone, Default)]
 pub struct StreamOptions {
     pub base: ProviderRequestOptions,
@@ -1335,6 +1343,15 @@ pub struct StreamOptions {
     pub session_id: Option<String>,
     pub websocket_connect_timeout_ms: Option<u64>,
     pub metadata: Option<BTreeMap<String, serde_json::Value>>,
+    pub transform_headers: Option<TransformHeadersFn>,
+}
+
+/// Port of `DeferredFetchOptions`: request options plus the maximum
+/// provider long-poll duration in milliseconds (0 = one status check).
+#[derive(Clone, Default)]
+pub struct DeferredFetchOptions {
+    pub base: ProviderRequestOptions,
+    pub wait: Option<u64>,
 }
 
 /// Port of `SimpleStreamOptions`.

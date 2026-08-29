@@ -55,7 +55,7 @@ pub trait ProviderStreams: Send + Sync {
         &self,
         _model: &Model,
         _handle: &DeferredHandle,
-        _options: Option<&ProviderRequestOptions>,
+        _options: Option<&crate::ai::types::DeferredFetchOptions>,
     ) -> Option<AssistantMessageEventStream> {
         None
     }
@@ -72,6 +72,12 @@ pub trait ProviderStreams: Send + Sync {
     /// Capability probe standing in for the TypeScript
     /// `entry.fetchDeferred !== undefined` check in `createProvider`.
     fn supports_deferred(&self) -> bool {
+        false
+    }
+
+    /// Capability probe standing in for the TypeScript
+    /// `entry.cancelDeferred !== undefined` check in `createProvider`.
+    fn supports_cancel_deferred(&self) -> bool {
         false
     }
 }
@@ -186,7 +192,7 @@ pub trait Provider: Send + Sync {
         &self,
         model: &Model,
         handle: &DeferredHandle,
-        options: Option<&ProviderRequestOptions>,
+        options: Option<&crate::ai::types::DeferredFetchOptions>,
     ) -> Option<AssistantMessageEventStream> {
         let _ = (model, handle, options);
         None
@@ -201,6 +207,19 @@ pub trait Provider: Send + Sync {
         let _ = (model, handle, options);
         None
     }
+
+    /// Capability probe standing in for the TypeScript
+    /// `provider.fetchDeferred !== undefined` check in `Models.fetchDeferred`.
+    fn supports_deferred(&self) -> bool {
+        false
+    }
+
+    /// Capability probe standing in for the TypeScript
+    /// `provider.cancelDeferred !== undefined` check in
+    /// `Models.cancelDeferred`.
+    fn supports_cancel_deferred(&self) -> bool {
+        false
+    }
 }
 
 /// Port of `CreateModelsOptions`.
@@ -214,6 +233,23 @@ pub struct CreateModelsOptions {
 struct ProviderRefreshState {
     generation: u64,
     controller: CancellationToken,
+}
+
+/// Port of `ModelsDeferredFetchOptions`:
+/// `DeferredFetchOptions & ModelsRequestTransforms`.
+#[derive(Clone, Default)]
+pub struct ModelsDeferredFetchOptions {
+    pub base: crate::ai::types::ProviderRequestOptions,
+    pub wait: Option<u64>,
+    pub transform_headers: Option<crate::ai::types::TransformHeadersFn>,
+}
+
+/// Port of `ModelsDeferredCancelOptions`:
+/// `DeferredCancelOptions & ModelsRequestTransforms`.
+#[derive(Clone, Default)]
+pub struct ModelsDeferredCancelOptions {
+    pub base: crate::ai::types::ProviderRequestOptions,
+    pub transform_headers: Option<crate::ai::types::TransformHeadersFn>,
 }
 
 /// Port of `ModelsImpl`: runtime collection of providers plus auth
@@ -744,6 +780,99 @@ impl Models {
         self.stream_simple(model, context, options).result().await
     }
 
+    /// Port of `Models.fetchDeferred` (options:
+    /// [`ModelsDeferredFetchOptions`]).
+    pub async fn fetch_deferred(
+        self: &Arc<Self>,
+        model: &Model,
+        handle: &DeferredHandle,
+        options: Option<ModelsDeferredFetchOptions>,
+    ) -> AssistantMessage {
+        lazy_stream(model, move || {
+            let models = Arc::clone(self);
+            let model = model.clone();
+            let handle = handle.clone();
+            let options = options.clone();
+            async move {
+                let provider = models.require_provider(&model)?;
+                if !provider.supports_deferred() {
+                    return Err(ModelsError::new(
+                        ModelsErrorCode::Provider,
+                        format!(
+                            "Provider {} does not support deferred responses",
+                            model.provider
+                        ),
+                    ));
+                }
+                let lifted = options
+                    .as_ref()
+                    .map(|options| crate::ai::types::StreamOptions {
+                        base: options.base.clone(),
+                        transform_headers: options.transform_headers.clone(),
+                        ..Default::default()
+                    });
+                let (request_model, request_options) =
+                    models.apply_auth_inner(&model, lifted.as_ref()).await?;
+                let deferred_options = crate::ai::types::DeferredFetchOptions {
+                    base: request_options.base,
+                    wait: options.as_ref().and_then(|options| options.wait),
+                };
+                Ok(provider
+                    .fetch_deferred(&request_model, &handle, Some(&deferred_options))
+                    .unwrap_or_else(|| {
+                        lazy_stream(&request_model, || {
+                            std::future::ready(Err(ModelsError::new(
+                                ModelsErrorCode::Provider,
+                                format!(
+                                    "Provider {} does not support deferred responses",
+                                    model.provider
+                                ),
+                            )))
+                        })
+                    }))
+            }
+        })
+        .result()
+        .await
+    }
+
+    /// Port of `Models.cancelDeferred` (options:
+    /// [`ModelsDeferredCancelOptions`]).
+    pub async fn cancel_deferred(
+        self: &Arc<Self>,
+        model: &Model,
+        handle: &DeferredHandle,
+        options: Option<ModelsDeferredCancelOptions>,
+    ) -> Result<(), ModelsError> {
+        let provider = self.require_provider(model)?;
+        if !provider.supports_cancel_deferred() {
+            return Err(ModelsError::new(
+                ModelsErrorCode::Provider,
+                format!(
+                    "Provider {} does not support deferred responses",
+                    model.provider
+                ),
+            ));
+        }
+        let lifted = options.as_ref().map(|options| StreamOptions {
+            base: options.base.clone(),
+            transform_headers: options.transform_headers.clone(),
+            ..Default::default()
+        });
+        let (request_model, request_options) =
+            self.apply_auth_inner(model, lifted.as_ref()).await?;
+        match provider.cancel_deferred(&request_model, handle, Some(&request_options.base)) {
+            Some(future) => future.await,
+            None => Err(ModelsError::new(
+                ModelsErrorCode::Provider,
+                format!(
+                    "Provider {} does not support deferred responses",
+                    model.provider
+                ),
+            )),
+        }
+    }
+
     fn require_provider(&self, model: &Model) -> Result<Arc<dyn Provider>, ModelsError> {
         self.get_provider(&model.provider).ok_or_else(|| {
             ModelsError::new(
@@ -869,10 +998,14 @@ impl Models {
         let api_key = options
             .and_then(|options| options.base.api_key.clone())
             .or(auth.api_key);
-        let headers = merge_headers(
+        let mut headers = merge_headers(
             auth.headers,
             options.and_then(|options| options.base.headers.as_ref()),
         );
+        // The Models-only transform runs last.
+        if let Some(transform) = options.and_then(|options| options.transform_headers.as_ref()) {
+            headers = Some(transform(headers.unwrap_or_default()).await);
+        }
         let env = match (
             resolution.env,
             options.and_then(|options| options.base.env.clone()),
@@ -903,6 +1036,7 @@ impl Models {
 
         // Preserve the caller's non-auth option fields.
         if let Some(options) = options {
+            resolved.transform_headers = options.transform_headers.clone();
             resolved.temperature = options.temperature;
             resolved.sampling_params = options.sampling_params.clone();
             resolved.max_tokens = options.max_tokens;
@@ -1356,6 +1490,20 @@ impl Provider for BasicProvider {
         })
     }
 
+    fn supports_deferred(&self) -> bool {
+        self.api
+            .entries()
+            .iter()
+            .any(|entry| entry.supports_deferred())
+    }
+
+    fn supports_cancel_deferred(&self) -> bool {
+        self.api
+            .entries()
+            .iter()
+            .any(|entry| entry.supports_cancel_deferred())
+    }
+
     fn has_refresh_models(&self) -> bool {
         self.fetch_models.is_some()
     }
@@ -1391,7 +1539,7 @@ impl Provider for BasicProvider {
         &self,
         model: &Model,
         handle: &DeferredHandle,
-        options: Option<&ProviderRequestOptions>,
+        options: Option<&crate::ai::types::DeferredFetchOptions>,
     ) -> Option<AssistantMessageEventStream> {
         // Only wired when at least one implementation supports deferred
         // responses, mirroring `createProvider`.
@@ -1403,18 +1551,20 @@ impl Provider for BasicProvider {
         {
             return None;
         }
-        if let Some(implementation) = self.api.for_model(model) {
-            return implementation.fetch_deferred(model, handle, options);
+        match self.api.for_model(model) {
+            Some(implementation) if implementation.supports_deferred() => {
+                implementation.fetch_deferred(model, handle, options)
+            }
+            _ => Some(lazy_stream(model, || {
+                std::future::ready(Err(ModelsError::new(
+                    ModelsErrorCode::Provider,
+                    format!(
+                        "Provider {} does not support deferred responses for \"{}\"",
+                        self.id, model.api
+                    ),
+                )))
+            })),
         }
-        Some(lazy_stream(model, || {
-            std::future::ready(Err(ModelsError::new(
-                ModelsErrorCode::Provider,
-                format!(
-                    "Provider {} does not support deferred responses for \"{}\"",
-                    self.id, model.api
-                ),
-            )))
-        }))
     }
 
     fn cancel_deferred(
@@ -1427,11 +1577,20 @@ impl Provider for BasicProvider {
             .api
             .entries()
             .iter()
-            .any(|entry| entry.supports_deferred())
+            .any(|entry| entry.supports_cancel_deferred())
         {
             return None;
         }
         let implementation = self.api.for_model(model)?;
+        if !implementation.supports_cancel_deferred() {
+            return Some(Box::pin(std::future::ready(Err(ModelsError::new(
+                ModelsErrorCode::Provider,
+                format!(
+                    "Provider {} cannot cancel deferred responses for \"{}\"",
+                    self.id, model.api
+                ),
+            )))));
+        }
         let model = model.clone();
         let handle = handle.clone();
         let options = options.cloned();
