@@ -101,7 +101,7 @@ upstream package).
 | `src/bun-oauth.ts` | | pending |
 | `src/cli.ts` | | pending |
 | `src/compat.ts` | | pending |
-| `src/compat/extension-oauth-types.ts` | | pending |
+| `src/compat/extension-oauth-types.ts` | `src/ai/compat.rs` | done |
 | `src/env-api-keys.ts` | `src/ai/env_api_keys.rs` | done |
 | `src/image-models.generated.ts` | `src/ai/models_generated.rs (embedded with models catalog)` | done |
 | `src/image-models.ts` | | pending |
@@ -114,7 +114,7 @@ upstream package).
 | `src/models-store.ts` | `src/ai/models_store.rs` | pending |
 | `src/models.generated.ts` | `src/ai/models_generated.rs (+ src/ai/data/models.generated.json via scripts/oracle/export-model-catalog.mts)` | done |
 | `src/models.ts` | `src/ai/models.rs` | done |
-| `src/oauth.ts` | | pending |
+| `src/oauth.ts` | `src/ai/compat.rs (type re-exports)` | done |
 | `src/providers/all.ts` | | pending |
 | `src/providers/amazon-bedrock.models.ts` | | pending |
 | `src/providers/amazon-bedrock.ts` | | pending |
@@ -213,7 +213,7 @@ upstream package).
 | `src/utils/hash.ts` | `src/ai/utils/text.rs (short_hash)` | done |
 | `src/utils/headers.ts` | `src/ai/utils/headers.rs` | done |
 | `src/utils/json-parse.ts` | `src/ai/utils/json_parse.rs` | done |
-| `src/utils/node-http-proxy.ts` | | pending |
+| `src/utils/node-http-proxy.ts` | `src/ai/utils/node_http_proxy.rs` | done |
 | `src/utils/overflow.ts` | `src/ai/utils/overflow.rs` | done |
 | `src/utils/pi-user-agent.ts` | `src/ai/session_resources.rs (get_pi_user_agent)` | done |
 | `src/utils/provider-env.ts` | `src/ai/utils/provider_env.rs` | done |
@@ -373,6 +373,19 @@ upstream package).
 | `test/xiaomi-token-plan-ams-anthropic-empty-signature-smoke.test.ts` | | pending |
 | `test/zai-coding-plan-models.test.ts` | | pending |
 | `test/zen.test.ts` | | pending |
+
+### Documented deviations and deferrals
+
+- `src/cli.ts` (Node CLI for OAuth login) and `src/bun-oauth.ts` (Bun
+  credential export) are runtime entry points for the Node/Bun
+  environments; they depend on the OAuth provider flows and are ported with
+  them (M3). `bun-oauth.ts`'s Bun-specific export has no Rust counterpart.
+- `src/compat.ts` and `src/legacy-api-aliases.ts` are re-export shims over
+  the API implementations; they land with the providers (M3).
+- `index.ts` public re-exports are mirrored as they land module by module.
+- The HTTP proxy resolver returns the proxy URL string; TypeScript returns a
+  `URL` object (whose `toString` adds a trailing slash). Transport
+  construction consumes the string form.
 
 ### Additional Rust modules
 

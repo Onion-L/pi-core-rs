@@ -9,6 +9,7 @@ pub mod event_stream;
 pub mod headers;
 pub mod http;
 pub mod json_parse;
+pub mod node_http_proxy;
 pub mod overflow;
 pub mod provider_env;
 pub mod provider_retry;
