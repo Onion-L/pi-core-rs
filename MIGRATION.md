@@ -102,8 +102,8 @@ upstream package).
 | `src/cli.ts` | | pending |
 | `src/compat.ts` | | pending |
 | `src/compat/extension-oauth-types.ts` | | pending |
-| `src/env-api-keys.ts` | | pending |
-| `src/image-models.generated.ts` | | pending |
+| `src/env-api-keys.ts` | `src/ai/env_api_keys.rs` | done |
+| `src/image-models.generated.ts` | `src/ai/models_generated.rs (embedded with models catalog)` | done |
 | `src/image-models.ts` | | pending |
 | `src/images-api-registry.ts` | | pending |
 | `src/images-models.ts` | | pending |
@@ -112,7 +112,7 @@ upstream package).
 | `src/legacy-api-aliases.ts` | | pending |
 | `src/model-catalog.ts` | `src/ai/model_catalog.rs` | done (identity helper; TS generics are compile-time only) |
 | `src/models-store.ts` | `src/ai/models_store.rs` | pending |
-| `src/models.generated.ts` | | pending |
+| `src/models.generated.ts` | `src/ai/models_generated.rs (+ src/ai/data/models.generated.json via scripts/oracle/export-model-catalog.mts)` | done |
 | `src/models.ts` | `src/ai/models.rs` | done |
 | `src/oauth.ts` | | pending |
 | `src/providers/all.ts` | | pending |
@@ -201,7 +201,7 @@ upstream package).
 | `src/providers/zai-coding-cn.ts` | | pending |
 | `src/providers/zai.models.ts` | | pending |
 | `src/providers/zai.ts` | | pending |
-| `src/session-resources.ts` | | pending |
+| `src/session-resources.ts` | `src/ai/session_resources.rs` | done |
 | `src/types.ts` | `src/ai/types.rs` | done |
 | `src/utils/abort-signals.ts` | `src/ai/utils/abort.rs` | done |
 | `src/utils/abort.ts` | `src/ai/utils/abort.rs` | done |
@@ -215,7 +215,7 @@ upstream package).
 | `src/utils/json-parse.ts` | `src/ai/utils/json_parse.rs` | done |
 | `src/utils/node-http-proxy.ts` | | pending |
 | `src/utils/overflow.ts` | `src/ai/utils/overflow.rs` | done |
-| `src/utils/pi-user-agent.ts` | | pending |
+| `src/utils/pi-user-agent.ts` | `src/ai/session_resources.rs (get_pi_user_agent)` | done |
 | `src/utils/provider-env.ts` | `src/ai/utils/provider_env.rs` | done |
 | `src/utils/provider-retry.ts` | `src/ai/utils/provider_retry.rs` | done |
 | `src/utils/retry.ts` | `src/ai/utils/retry.rs` | done |
