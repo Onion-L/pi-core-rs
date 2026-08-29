@@ -1,6 +1,19 @@
 [package]
 name = "pi-core-rs"
-version = "0.1.0"
+version = "0.84.4"
 edition = "2024"
+license = "MIT"
+description = "Standalone Rust port of @earendil-works/pi-agent-core, pi-ai, and pi-telemetry v0.84.4"
+repository = "https://github.com/earendil-works/pi"
+publish = false
+
+[lib]
+name = "pi_core"
+path = "src/lib.rs"
 
 [dependencies]
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "sync"] }
