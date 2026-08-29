@@ -120,8 +120,8 @@ upstream package).
 | `src/providers/amazon-bedrock.ts` | | pending |
 | `src/providers/ant-ling.models.ts` | | pending |
 | `src/providers/ant-ling.ts` | | pending |
-| `src/providers/anthropic.models.ts` | | pending |
-| `src/providers/anthropic.ts` | | pending |
+| `src/providers/anthropic.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/anthropic.ts` | `src/ai/providers/anthropic.rs` | done |
 | `src/providers/azure-openai-responses.models.ts` | | pending |
 | `src/providers/azure-openai-responses.ts` | | pending |
 | `src/providers/baseten.models.ts` | | pending |
@@ -232,7 +232,7 @@ upstream package).
 |---|---|---|
 | `test/abort.test.ts` | | pending |
 | `test/anthropic-adaptive-thinking-models.test.ts` | | pending |
-| `test/anthropic-auth-token.test.ts` | | pending |
+| `test/anthropic-auth-token.test.ts` | `tests/ai_anthropic_auth_token.rs` | done (SDK-mock cases assert on the captured HTTP request instead of SDK constructor options) |
 | `test/anthropic-cache-write-1h-cost.test.ts` | | pending |
 | `test/anthropic-eager-tool-input-compat.test.ts` | | pending |
 | `test/anthropic-eager-tool-input-e2e.test.ts` | | pending |
