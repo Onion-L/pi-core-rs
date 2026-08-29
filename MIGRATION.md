@@ -280,7 +280,7 @@ upstream package).
 | `test/fireworks-models.test.ts` | | pending |
 | `test/generate-models-strict.test.ts` | | pending |
 | `test/github-copilot-anthropic.test.ts` | | pending |
-| `test/github-copilot-oauth.test.ts` | `tests/ai_oauth_github_copilot.rs` | done (Models.login/store integration cases land with the provider factories) |
+| `test/github-copilot-oauth.test.ts` | `tests/ai_oauth_github_copilot.rs` | done (Models getAvailable/store halves and the login-budget case included; the budget case rebuilds the provider with a scripted flow, mirroring the TS global-fetch stub) |
 | `test/google-raw-stop-reason.test.ts` | | pending |
 | `test/google-shared-convert-tools.test.ts` | | pending |
 | `test/google-shared-gemini3-unsigned-tool-call.test.ts` | | pending |
@@ -308,7 +308,7 @@ upstream package).
 | `test/model-data-validation.test.ts` | | pending |
 | `test/models-runtime.test.ts` | | pending |
 | `test/node-http-proxy.test.ts` | | pending |
-| `test/oauth-auth.test.ts` | `tests/ai_oauth_auth.rs` | done (Models.getAuth lazy-chain cases land with the provider factories; module-barrel introspection is a TypeScript namespace concern) |
+| `test/oauth-auth.test.ts` | `tests/ai_oauth_auth.rs` | done (Models.getAuth lazy-chain cases included; module-barrel introspection is a TypeScript namespace concern) |
 | `test/oauth-device-code.test.ts` | `tests/ai_oauth_device_code.rs` | done |
 | `test/oauth.ts` | | pending |
 | `test/openai-codex-cache-affinity-e2e.test.ts` | | pending |
@@ -338,14 +338,14 @@ upstream package).
 | `test/openrouter-cache-control-models.test.ts` | | pending |
 | `test/openrouter-cache-write-repro.test.ts` | | pending |
 | `test/openrouter-images.test.ts` | `tests/ai_openrouter_images.rs` | done (mock at the `HttpFetch` transport replaces the OpenAI-SDK mock) |
-| `test/openrouter-oauth.test.ts` | `tests/ai_oauth_openrouter.rs` | done (the two provider-integration cases land with the provider factories) |
+| `test/openrouter-oauth.test.ts` | `tests/ai_oauth_openrouter.rs` | done |
 | `test/openrouter-reasoning-options.test.ts` | | pending |
 | `test/overflow.test.ts` | | pending |
 | `test/pi-messages.test.ts` | | pending |
 | `test/provider-error-body-passthrough.test.ts` | | pending |
 | `test/provider-error-body-regression.test.ts` | | pending |
 | `test/provider-retry.test.ts` | | pending |
-| `test/providers.test.ts` | `tests/ai_providers.rs` (+ `tests/ai_models.rs` for the dispatch-error case) | partial (builtin catalog, anthropic env precedence, cloudflare getAuth, vertex, envApiKeyAuth, dispatch, env merge, deferred fetch/cancel options, faux streams and deferred submit/poll/cancel cases ported; bedrock and dynamic-refresh-supersede cases pending) |
+| `test/providers.test.ts` | `tests/ai_providers.rs` (+ `tests/ai_models.rs` for the dispatch-error case) | partial (all non-bedrock cases ported: catalog, auth precedence, getAuth, dispatch, env merge, deferred options, faux streams, dynamic-refresh supersede; the two bedrock cases land with the bedrock module) |
 | `test/qwen-token-plan-models.test.ts` | | pending |
 | `test/radius-oauth.test.ts` | `tests/ai_oauth_radius.rs` | done |
 | `test/reasoning-options.test.ts` | | pending |

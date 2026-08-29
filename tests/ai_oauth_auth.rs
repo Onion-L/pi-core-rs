@@ -15,7 +15,7 @@ use pi_core::ai::auth::oauth::load::{
 use pi_core::ai::auth::oauth::openai_codex::openai_codex_oauth;
 use pi_core::ai::auth::oauth::openrouter::open_router_oauth;
 use pi_core::ai::auth::oauth::xai::xai_oauth;
-use pi_core::ai::auth::types::{OAuthAuth, OAuthCredential};
+use pi_core::ai::auth::types::{CredentialStore, OAuthAuth, OAuthCredential};
 use pi_core::ai::types::FetchFunction;
 use pi_core::ai::utils::http::{HttpFetch, HttpFetchError, HttpRequest, HttpResponse};
 use tokio_util::sync::CancellationToken;
@@ -215,5 +215,106 @@ async fn github_copilot_to_auth_derives_urls_from_tokens() {
     assert_eq!(
         auth.base_url.as_deref(),
         Some("https://api.enterprise.example")
+    );
+}
+
+// ---------------------------------------------------------------------------
+// OAuth through Models.getAuth (lazy load chain), landed with the provider
+// factories.
+
+#[tokio::test]
+async fn resolves_stored_anthropic_oauth_credentials_via_the_lazy_flow_import() {
+    let credentials = pi_core::ai::auth::credential_store::InMemoryCredentialStore::new();
+    // Keep the expiry beyond getAuth()'s refresh window.
+    let expires = pi_core::ai::auth::resolve::now_millis() + 10 * 60_000;
+    credentials
+        .modify(
+            "anthropic",
+            Box::new(move |_| {
+                Box::pin(std::future::ready(Ok(Some(
+                    pi_core::ai::auth::types::Credential::OAuth(OAuthCredential {
+                        access: "oauth-access-token".to_string(),
+                        refresh: "r".to_string(),
+                        expires,
+                        ..Default::default()
+                    }),
+                ))))
+                    as pi_core::ai::auth::types::AuthFuture<
+                        Result<
+                            Option<pi_core::ai::auth::types::Credential>,
+                            pi_core::ai::auth::types::BoxedAuthError,
+                        >,
+                    >
+            }),
+            None,
+        )
+        .await
+        .unwrap();
+
+    let models = Arc::new(pi_core::ai::models::Models::new(
+        pi_core::ai::models::CreateModelsOptions {
+            credentials: Some(Arc::new(credentials)),
+            ..Default::default()
+        },
+    ));
+    models.set_provider(pi_core::ai::providers::anthropic::anthropic_provider());
+
+    let model = models.get_models(Some("anthropic"))[0].clone();
+    let result = models
+        .get_auth(&model.provider, None, None)
+        .await
+        .unwrap()
+        .expect("configured");
+    assert_eq!(result.auth.api_key.as_deref(), Some("oauth-access-token"));
+    assert_eq!(result.source.as_deref(), Some("OAuth"));
+}
+
+#[tokio::test]
+async fn resolves_stored_github_copilot_oauth_credentials_including_per_credential_base_url() {
+    let access = "tid=abc;exp=123;proxy-ep=proxy.business.githubcopilot.com;rest";
+    let credentials = pi_core::ai::auth::credential_store::InMemoryCredentialStore::new();
+    let expires = pi_core::ai::auth::resolve::now_millis() + 10 * 60_000;
+    credentials
+        .modify(
+            "github-copilot",
+            Box::new(move |_| {
+                Box::pin(std::future::ready(Ok(Some(
+                    pi_core::ai::auth::types::Credential::OAuth(OAuthCredential {
+                        access: access.to_string(),
+                        refresh: "r".to_string(),
+                        expires,
+                        ..Default::default()
+                    }),
+                ))))
+                    as pi_core::ai::auth::types::AuthFuture<
+                        Result<
+                            Option<pi_core::ai::auth::types::Credential>,
+                            pi_core::ai::auth::types::BoxedAuthError,
+                        >,
+                    >
+            }),
+            None,
+        )
+        .await
+        .unwrap();
+
+    let models = Arc::new(pi_core::ai::models::Models::new(
+        pi_core::ai::models::CreateModelsOptions {
+            credentials: Some(Arc::new(credentials)),
+            ..Default::default()
+        },
+    ));
+    models.set_provider(pi_core::ai::providers::builtin::github_copilot_provider());
+
+    let model = models.get_models(Some("github-copilot"))[0].clone();
+    let result = models
+        .get_auth(&model.provider, None, None)
+        .await
+        .unwrap()
+        .expect("configured");
+    assert_eq!(result.auth.api_key.as_deref(), Some(access));
+    assert_eq!(
+        result.auth.base_url.as_deref(),
+        Some("https://api.business.githubcopilot.com")
     );
 }

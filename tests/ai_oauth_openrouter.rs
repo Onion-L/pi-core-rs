@@ -658,3 +658,77 @@ async fn uses_the_configured_oauth_callback_host() {
         url::Url::parse(&callback_url_slot.lock().unwrap().clone().unwrap()).unwrap();
     assert_eq!(callback_url.host_str(), Some("localhost"));
 }
+
+// ---------------------------------------------------------------------------
+// Provider integration (the two cases that landed with the factories).
+
+#[test]
+fn is_exposed_by_both_openrouter_providers_alongside_api_key_auth() {
+    let text = pi_core::ai::providers::builtin::openrouter_provider();
+    let images = pi_core::ai::providers::builtin::openrouter_images_provider();
+    let text_auth = text.auth();
+    let images_auth = images.auth();
+    for (id, auth) in [("openrouter", text_auth), ("openrouter", images_auth)] {
+        assert!(auth.api_key.is_some(), "{id}");
+        let oauth = auth.oauth.as_ref().expect("oauth auth");
+        assert_eq!(oauth.login_label(), Some("Sign in with OpenRouter"));
+    }
+}
+
+#[tokio::test]
+async fn resolves_the_same_stored_oauth_key_for_text_and_image_providers() {
+    use pi_core::ai::auth::credential_store::InMemoryCredentialStore;
+    use pi_core::ai::auth::types::{AuthFuture, CredentialStore};
+    use pi_core::ai::images_models::ImagesModels;
+    use pi_core::ai::models::{CreateModelsOptions, Models};
+    use pi_core::ai::providers::builtin::{openrouter_images_provider, openrouter_provider};
+
+    let credentials = Arc::new(InMemoryCredentialStore::new());
+    credentials
+        .modify(
+            "openrouter",
+            Box::new(|_| {
+                Box::pin(std::future::ready(Ok(Some(
+                    pi_core::ai::auth::types::Credential::OAuth(OAuthCredential {
+                        access: "sk-or-stored".to_string(),
+                        refresh: String::new(),
+                        expires: MAX_SAFE_INTEGER,
+                        ..Default::default()
+                    }),
+                ))))
+                    as AuthFuture<
+                        Result<
+                            Option<pi_core::ai::auth::types::Credential>,
+                            pi_core::ai::auth::types::BoxedAuthError,
+                        >,
+                    >
+            }),
+            None,
+        )
+        .await
+        .unwrap();
+
+    let text_models = Arc::new(Models::new(CreateModelsOptions {
+        credentials: Some(Arc::clone(&credentials) as Arc<dyn CredentialStore>),
+        ..Default::default()
+    }));
+    text_models.set_provider(openrouter_provider());
+    let image_models = ImagesModels::new(CreateModelsOptions {
+        credentials: Some(Arc::clone(&credentials) as Arc<dyn CredentialStore>),
+        ..Default::default()
+    });
+    image_models.set_provider(openrouter_images_provider());
+
+    let text_auth = text_models
+        .get_auth("openrouter", None, None)
+        .await
+        .unwrap()
+        .expect("configured");
+    assert_eq!(text_auth.auth.api_key.as_deref(), Some("sk-or-stored"));
+    let image_auth = image_models
+        .get_auth("openrouter", None)
+        .await
+        .unwrap()
+        .expect("configured");
+    assert_eq!(image_auth.auth.api_key.as_deref(), Some("sk-or-stored"));
+}

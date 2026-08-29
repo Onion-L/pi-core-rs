@@ -1250,3 +1250,114 @@ async fn records_cancellation_and_returns_deferred_fetch_failures_in_band() {
             .is_some_and(|message| message.contains("was cancelled"))
     );
 }
+
+#[tokio::test]
+async fn lets_a_newer_dynamic_refresh_bypass_and_supersede_older_network_work() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let fetches = Arc::new(AtomicUsize::new(0));
+    let (first_started_tx, first_started_rx) = tokio::sync::oneshot::channel::<()>();
+    let (finish_first_tx, finish_first_rx) = tokio::sync::oneshot::channel::<()>();
+    let finish_gate = Arc::new(Mutex::new(Some(finish_first_rx)));
+
+    let fetch_counter = Arc::clone(&fetches);
+    let gate = Arc::clone(&finish_gate);
+    let first_started = Mutex::new(Some(first_started_tx));
+    let fetch_models: pi_core::ai::models::FetchModelsFn = Arc::new(move |_context| {
+        let current = fetch_counter.fetch_add(1, Ordering::SeqCst) + 1;
+        let gate = Arc::clone(&gate);
+        let started = (current == 1)
+            .then(|| first_started.lock().unwrap().take())
+            .flatten();
+        Box::pin(async move {
+            if let Some(started) = started {
+                let _ = started.send(());
+                let receiver = gate.lock().unwrap().take();
+                if let Some(receiver) = receiver {
+                    let _ = receiver.await;
+                }
+            }
+            Ok(vec![plain_test_model(
+                "api-a",
+                &format!("listed-{current}"),
+                "dynamic",
+            )])
+        })
+    });
+
+    let provider =
+        pi_core::ai::models::create_provider(pi_core::ai::models::CreateProviderOptions {
+            id: "dynamic".to_string(),
+            name: None,
+            base_url: None,
+            headers: None,
+            auth: pi_core::ai::auth::types::ProviderAuth::api_key(Arc::new(UnconfiguredApiKeyAuth)),
+            models: Vec::new(),
+            fetch_models: Some(fetch_models),
+            filter_models: None,
+            api: pi_core::ai::models::ProviderApi::Single(Arc::new(RecordingStreams::default())
+                as Arc<dyn pi_core::ai::models::ProviderStreams>),
+        });
+
+    let store = Arc::new(pi_core::ai::models_store::InMemoryModelsStore::new());
+    let models = Arc::new(Models::new(CreateModelsOptions {
+        models_store: Some(Arc::clone(&store) as Arc<dyn pi_core::ai::models_store::ModelsStore>),
+        ..Default::default()
+    }));
+    models.set_provider(provider);
+    assert!(models.get_models(Some("dynamic")).is_empty());
+
+    let first_models = Arc::clone(&models);
+    let first = tokio::spawn(async move {
+        first_models
+            .refresh(pi_core::ai::models::ModelsRefreshOptions {
+                providers: Some(vec!["dynamic".to_string()]),
+                ..Default::default()
+            })
+            .await
+    });
+    first_started_rx.await.unwrap();
+    let second = models.refresh(pi_core::ai::models::ModelsRefreshOptions {
+        providers: Some(vec!["dynamic".to_string()]),
+        ..Default::default()
+    });
+    let second = second.await;
+    let first = first.await.unwrap();
+    assert!(second.errors.is_empty(), "{:?}", second.errors);
+    assert!(!second.aborted);
+    assert!(!first.aborted);
+    assert_eq!(fetches.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        models
+            .get_models(Some("dynamic"))
+            .iter()
+            .map(|model| model.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["listed-2"]
+    );
+    let stored = pi_core::ai::models_store::ModelsStore::read(store.as_ref(), "dynamic", None)
+        .await
+        .unwrap();
+    assert_eq!(
+        stored
+            .expect("stored entry")
+            .models
+            .iter()
+            .map(|model| model.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["listed-2"]
+    );
+
+    // The superseded fetch finishing later must not clobber the newer
+    // publication (generation checks reject it).
+    let _ = finish_first_tx.send(());
+    tokio::task::yield_now().await;
+    assert_eq!(
+        models
+            .get_models(Some("dynamic"))
+            .iter()
+            .map(|model| model.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["listed-2"]
+    );
+}

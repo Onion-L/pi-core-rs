@@ -10,8 +10,8 @@ use pi_core::ai::auth::oauth::github_copilot::{
     GitHubCopilotOAuth, available_model_ids, github_copilot_oauth,
 };
 use pi_core::ai::auth::types::{
-    AuthEvent, AuthInteraction, AuthPrompt, AuthPromptKind, AuthStorageError, OAuthAuth,
-    OAuthCredential,
+    AuthEvent, AuthInteraction, AuthPrompt, AuthPromptKind, AuthStorageError, CredentialStore,
+    OAuthAuth, OAuthCredential,
 };
 use pi_core::ai::types::FetchFunction;
 use pi_core::ai::utils::http::{HttpBody, HttpFetch, HttpFetchError, HttpRequest, HttpResponse};
@@ -676,5 +676,169 @@ async fn to_auth_derives_the_proxy_endpoint_base_url() {
     assert_eq!(
         auth.base_url.as_deref(),
         Some("https://api.individual.githubcopilot.com")
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Store integration (the Models halves of the picker-catalog cases and the
+// login-budget case, landed with the provider factories).
+
+async fn copilot_models_with_credential(
+    credential: OAuthCredential,
+) -> Arc<pi_core::ai::models::Models> {
+    let store = pi_core::ai::auth::credential_store::InMemoryCredentialStore::new();
+    let for_store = credential;
+    store
+        .modify(
+            "github-copilot",
+            Box::new(move |_| {
+                Box::pin(std::future::ready(Ok(Some(
+                    pi_core::ai::auth::types::Credential::OAuth(for_store),
+                ))))
+                    as pi_core::ai::auth::types::AuthFuture<
+                        Result<
+                            Option<pi_core::ai::auth::types::Credential>,
+                            pi_core::ai::auth::types::BoxedAuthError,
+                        >,
+                    >
+            }),
+            None,
+        )
+        .await
+        .unwrap();
+    let models = Arc::new(pi_core::ai::models::Models::new(
+        pi_core::ai::models::CreateModelsOptions {
+            credentials: Some(Arc::new(store)),
+            ..Default::default()
+        },
+    ));
+    models.set_provider(pi_core::ai::providers::builtin::github_copilot_provider());
+    models
+}
+
+#[tokio::test]
+async fn get_available_filters_models_to_the_authenticated_account_picker_catalog() {
+    let (fetch, _) = refresh_models_routes(
+        serde_json::json!([
+            { "id": "gpt-4.1", "model_picker_enabled": true, "capabilities": { "supports": { "tool_calls": true } } },
+            { "id": "claude-opus-4.7", "model_picker_enabled": true, "policy": { "state": "disabled" }, "capabilities": { "supports": { "tool_calls": true } } },
+            { "id": "gpt-5.4-nano", "model_picker_enabled": false, "policy": { "state": "enabled" }, "capabilities": { "supports": { "tool_calls": true } } },
+        ]),
+        "proxy.individual.githubcopilot.com",
+    );
+    let credentials = refresh(Arc::clone(&fetch)).await.unwrap();
+    assert_eq!(available_model_ids(&credentials), vec!["gpt-4.1"]);
+
+    let models = copilot_models_with_credential(credentials).await;
+    let available = models
+        .get_available(Some("github-copilot"), None)
+        .await
+        .unwrap();
+    let ids: Vec<&str> = available.iter().map(|model| model.id.as_str()).collect();
+    assert_eq!(ids, vec!["gpt-4.1"]);
+}
+
+#[tokio::test]
+async fn get_available_falls_back_to_explicitly_enabled_policy_models() {
+    let (fetch, _) = refresh_models_routes(
+        serde_json::json!([
+            { "id": "gpt-4.1", "model_picker_enabled": false, "policy": { "state": "enabled" }, "capabilities": { "supports": { "tool_calls": true } } },
+            { "id": "claude-opus-4.7", "model_picker_enabled": false, "policy": { "state": "disabled" }, "capabilities": { "supports": { "tool_calls": true } } },
+            { "id": "gpt-5.4-nano", "model_picker_enabled": false, "capabilities": { "supports": { "tool_calls": true } } },
+            { "id": "gpt-4o", "model_picker_enabled": false, "policy": { "state": "enabled" }, "capabilities": { "supports": { "tool_calls": false } } },
+        ]),
+        "proxy.individual.githubcopilot.com",
+    );
+    let credentials = refresh(Arc::clone(&fetch)).await.unwrap();
+    assert_eq!(available_model_ids(&credentials), vec!["gpt-4.1"]);
+
+    let models = copilot_models_with_credential(credentials).await;
+    let available = models
+        .get_available(Some("github-copilot"), None)
+        .await
+        .unwrap();
+    let ids: Vec<&str> = available.iter().map(|model| model.id.as_str()).collect();
+    assert_eq!(ids, vec!["gpt-4.1"]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn stops_policy_updates_and_persists_authentication_when_the_retry_delay_exceeds_the_login_budget()
+ {
+    let policy_model_ids = Arc::new(Mutex::new(Vec::<String>::new()));
+    let ids = Arc::clone(&policy_model_ids);
+    let handler = login_routes(
+        Arc::new(|| {
+            json_reply(serde_json::json!({"data": [
+                { "id": "gpt-4.1", "model_picker_enabled": true, "policy": { "state": "unconfigured" } },
+                { "id": "claude-sonnet-4.5", "model_picker_enabled": true, "policy": { "state": "unconfigured" } },
+            ]}))
+        }),
+        Some(Arc::new(move |model_id| {
+            ids.lock().unwrap().push(model_id.to_string());
+            throttled("5")
+        })),
+    );
+    let fetch = Arc::new(ScriptedFetch {
+        handler,
+        requests: Mutex::new(Vec::new()),
+    });
+    // A clock that advances with the (paused, auto-advancing) scheduler, like
+    // the TS suite's fake timers.
+    let start = tokio::time::Instant::now();
+    let now_ms = Arc::new(move || FROZEN_NOW_MS + start.elapsed().as_millis() as i64);
+    let injected_flow = GitHubCopilotOAuth::new(fetch as FetchFunction, now_ms);
+
+    // The provider is github-copilot's definition with the scripted flow;
+    // the TS case achieves the same by stubbing the global fetch.
+    let provider =
+        pi_core::ai::models::create_provider(pi_core::ai::models::CreateProviderOptions {
+            id: "github-copilot".to_string(),
+            name: Some("GitHub Copilot".to_string()),
+            base_url: Some("https://api.individual.githubcopilot.com".to_string()),
+            headers: None,
+            auth: pi_core::ai::auth::types::ProviderAuth {
+                api_key: Some(pi_core::ai::auth::helpers::env_api_key_auth(
+                    "GitHub Copilot token",
+                    &["COPILOT_GITHUB_TOKEN"],
+                )),
+                oauth: Some(Arc::new(injected_flow)),
+            },
+            models: pi_core::ai::models_generated::models_for_provider("github-copilot"),
+            fetch_models: None,
+            filter_models: None,
+            api: pi_core::ai::models::ProviderApi::Single(
+                pi_core::ai::providers::apis::anthropic_messages_api(),
+            ),
+        });
+
+    let store = Arc::new(pi_core::ai::auth::credential_store::InMemoryCredentialStore::new());
+    let models = Arc::new(pi_core::ai::models::Models::new(
+        pi_core::ai::models::CreateModelsOptions {
+            credentials: Some(Arc::clone(&store) as Arc<dyn CredentialStore>),
+            ..Default::default()
+        },
+    ));
+    models.set_provider(provider);
+
+    let credential = models
+        .login(
+            "github-copilot",
+            pi_core::ai::auth::types::AuthType::OAuth,
+            Arc::new(LoginInteraction {
+                events: Arc::new(Mutex::new(Vec::new())),
+            }),
+        )
+        .await
+        .unwrap();
+
+    // TS asserts with toMatchObject: the OAuth type and access token.
+    let pi_core::ai::auth::types::Credential::OAuth(oauth) = &credential else {
+        panic!("expected an OAuth credential, got {credential:?}");
+    };
+    assert_eq!(oauth.access, TEST_COPILOT_ACCESS_TOKEN);
+    assert_eq!(*policy_model_ids.lock().unwrap(), vec!["gpt-4.1"]);
+    assert_eq!(
+        store.read("github-copilot", None).await.unwrap(),
+        Some(credential)
     );
 }

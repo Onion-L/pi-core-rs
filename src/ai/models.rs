@@ -259,7 +259,7 @@ pub struct Models {
     credentials: Arc<dyn CredentialStore>,
     models_store: Arc<dyn ModelsStore>,
     auth_context: Arc<dyn AuthContext>,
-    refresh_states: Mutex<HashMap<String, ProviderRefreshState>>,
+    refresh_states: Arc<Mutex<HashMap<String, ProviderRefreshState>>>,
 }
 
 impl Default for Models {
@@ -282,7 +282,7 @@ impl Models {
             auth_context: options
                 .auth_context
                 .unwrap_or_else(default_provider_auth_context),
-            refresh_states: Mutex::new(HashMap::new()),
+            refresh_states: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -510,16 +510,22 @@ impl Models {
                     .await
                 };
 
-                match operation.await {
-                    Ok(()) => {}
-                    Err(error) => {
-                        if !signal.is_cancelled() {
-                            errors_for_task
-                                .lock()
-                                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                                .insert(provider_id, error);
+                // Port of `raceWithAbortSignal`: a superseding refresh (or the
+                // caller's signal) cuts the in-flight operation short; the
+                // aborted result carries no error.
+                tokio::select! {
+                    () = signal.cancelled() => {}
+                    result = operation => match result {
+                        Ok(()) => {}
+                        Err(error) => {
+                            if !signal.is_cancelled() {
+                                errors_for_task
+                                    .lock()
+                                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                    .insert(provider_id, error);
+                            }
                         }
-                    }
+                    },
                 }
             });
         }
@@ -1209,7 +1215,6 @@ async fn run_provider_refresh_phase(
         force,
         signal,
     } = phase;
-    let _ = generation;
     let stored = models
         .models_store
         .read(provider_id, None)
@@ -1224,13 +1229,24 @@ async fn run_provider_refresh_phase(
     let store = Arc::clone(&models.models_store);
     let provider_id_owned = provider_id.to_string();
     let signal_for_publish = signal.clone();
+    let refresh_states = Arc::clone(&models.refresh_states);
     let publish = move |publication: ModelsPublication| {
         let store = Arc::clone(&store);
         let provider_id = provider_id_owned.clone();
         let signal = signal_for_publish.clone();
+        let refresh_states = Arc::clone(&refresh_states);
         Box::pin(async move {
-            // Generation-checked publication.
-            if signal.is_cancelled() {
+            // Generation-checked publication: superseded refreshes neither
+            // persist nor apply their in-memory update.
+            let is_current = || {
+                !signal.is_cancelled()
+                    && refresh_states
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .get(&provider_id)
+                        .is_some_and(|state| state.generation == generation)
+            };
+            if !is_current() {
                 return Ok(false);
             }
             if let Some(persist) = publication.persist {
@@ -1243,7 +1259,13 @@ async fn run_provider_refresh_phase(
                     }
                 }
             }
-            Ok(!signal.is_cancelled())
+            if !is_current() {
+                return Ok(false);
+            }
+            if let Some(update) = publication.update {
+                update();
+            }
+            Ok(true)
         }) as BoxFuture<'static, Result<bool, ModelsStoreError>>
     };
     let context = RefreshModelsContext {
