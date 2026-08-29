@@ -88,7 +88,7 @@ upstream package).
 | `src/auth/oauth/device-code.ts` | `src/ai/auth/oauth/device_code.rs` | done (tokio time drives the fake-timer tests deterministically) |
 | `src/auth/oauth/github-copilot.ts` | `src/ai/auth/oauth/github_copilot.rs` | done (client id inlined decoded; rate-limit budget uses injectable clock) |
 | `src/auth/oauth/kimi-coding.ts` | `src/ai/auth/oauth/kimi_coding.rs` | done (injectable transport/clock/env; tokio timeout reproduces the 30s request signal) |
-| `src/auth/oauth/load.ts` | | pending |
+| `src/auth/oauth/load.ts` | `src/ai/auth/oauth/load.rs` | done (static linking replaces dynamic imports; bundled-loader registration is a bundler concern with no counterpart) |
 | `src/auth/oauth/oauth-page.ts` | `src/ai/auth/oauth/oauth_page.rs` | done |
 | `src/auth/oauth/openai-codex.ts` | `src/ai/auth/oauth/openai_codex.rs` | done (browser callback over tokio TcpListener; `accountId` rides the credential extension map) |
 | `src/auth/oauth/openrouter.ts` | `src/ai/auth/oauth/openrouter.rs` | done (loopback callback over tokio TcpListener; callback path uses UUIDv7 in place of crypto.randomUUID) |
@@ -308,7 +308,7 @@ upstream package).
 | `test/model-data-validation.test.ts` | | pending |
 | `test/models-runtime.test.ts` | | pending |
 | `test/node-http-proxy.test.ts` | | pending |
-| `test/oauth-auth.test.ts` | | pending |
+| `test/oauth-auth.test.ts` | `tests/ai_oauth_auth.rs` | done (Models.getAuth lazy-chain cases land with the provider factories; module-barrel introspection is a TypeScript namespace concern) |
 | `test/oauth-device-code.test.ts` | `tests/ai_oauth_device_code.rs` | done |
 | `test/oauth.ts` | | pending |
 | `test/openai-codex-cache-affinity-e2e.test.ts` | | pending |
