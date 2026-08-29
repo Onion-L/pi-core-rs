@@ -28,6 +28,7 @@ indexmap = { version = "2", features = ["serde"] }
 base64 = "0.22"
 hmac = "0.13"
 crc32fast = "1"
+libc = "0.2"
 
 [dev-dependencies]
 serde_json = { version = "1", features = ["preserve_order"] }

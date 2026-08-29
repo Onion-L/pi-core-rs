@@ -401,7 +401,11 @@ pub struct CreateTempFileOptions {
 }
 
 /// A streaming output chunk listener.
-pub type ChunkListener = Arc<dyn Fn(&str) + Send + Sync>;
+///
+/// TypeScript listeners are typed `void` but may throw at runtime; the
+/// Rust port surfaces that failure mode as the returned error (mapped to
+/// `callback_error` by the execution env).
+pub type ChunkListener = Arc<dyn Fn(&str) -> Result<(), String> + Send + Sync>;
 
 /// Port of `ShellExecOptions`.
 #[derive(Clone, Default)]

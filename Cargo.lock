@@ -722,6 +722,7 @@ dependencies = [
  "hmac",
  "httpdate",
  "indexmap",
+ "libc",
  "regex",
  "reqwest",
  "serde",
