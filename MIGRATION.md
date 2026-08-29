@@ -128,12 +128,12 @@ upstream package).
 | `src/providers/baseten.ts` | | pending |
 | `src/providers/cerebras.models.ts` | | pending |
 | `src/providers/cerebras.ts` | | pending |
-| `src/providers/cloudflare-ai-gateway.models.ts` | | pending |
-| `src/providers/cloudflare-ai-gateway.ts` | | pending |
+| `src/providers/cloudflare-ai-gateway.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/cloudflare-ai-gateway.ts` | `src/ai/providers/cloudflare_ai_gateway.rs` | done |
 | `src/providers/cloudflare-auth.ts` | `src/ai/providers/cloudflare_auth.rs` | done |
 | `src/providers/cloudflare-stream.ts` | `src/ai/providers/cloudflare_stream.rs` | done |
-| `src/providers/cloudflare-workers-ai.models.ts` | | pending |
-| `src/providers/cloudflare-workers-ai.ts` | | pending |
+| `src/providers/cloudflare-workers-ai.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/cloudflare-workers-ai.ts` | `src/ai/providers/cloudflare_workers_ai.rs` | done |
 | `src/providers/deepseek.models.ts` | | pending |
 | `src/providers/deepseek.ts` | | pending |
 | `src/providers/faux.ts` | `src/ai/providers/faux.rs` | done |

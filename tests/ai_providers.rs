@@ -8,6 +8,8 @@ use pi_core::ai::auth::types::{
     AuthPrompt, AuthStorageError,
 };
 use pi_core::ai::models::{CreateModelsOptions, Models};
+use pi_core::ai::providers::cloudflare_ai_gateway::cloudflare_ai_gateway_provider;
+use pi_core::ai::providers::cloudflare_workers_ai::cloudflare_workers_ai_provider;
 use pi_core::ai::providers::google_vertex::google_vertex_provider;
 use pi_core::ai::types::ProviderEnv;
 
@@ -213,4 +215,105 @@ async fn resolves_vertex_via_adc_file_plus_project_and_location() {
         .unwrap()
         .expect("configured");
     assert_eq!(result.auth.api_key.as_deref(), Some("vertex-key"));
+}
+
+#[tokio::test]
+async fn requires_cloudflare_workers_ai_account_config_and_returns_scoped_env() {
+    let missing_account = Arc::new(Models::new(CreateModelsOptions {
+        auth_context: Some(fake_auth_context(&[("CLOUDFLARE_API_KEY", "cf-key")], &[])),
+        ..Default::default()
+    }));
+    missing_account.set_provider(cloudflare_workers_ai_provider());
+    assert!(
+        missing_account
+            .get_auth("cloudflare-workers-ai", None, None)
+            .await
+            .unwrap()
+            .is_none()
+    );
+
+    let configured = Arc::new(Models::new(CreateModelsOptions {
+        auth_context: Some(fake_auth_context(
+            &[
+                ("CLOUDFLARE_API_KEY", "cf-key"),
+                ("CLOUDFLARE_ACCOUNT_ID", "account-id"),
+            ],
+            &[],
+        )),
+        ..Default::default()
+    }));
+    configured.set_provider(cloudflare_workers_ai_provider());
+    let result = configured
+        .get_auth("cloudflare-workers-ai", None, None)
+        .await
+        .unwrap()
+        .expect("configured");
+    assert_eq!(result.auth.api_key.as_deref(), Some("cf-key"));
+    let mut expected_env = ProviderEnv::new();
+    expected_env.insert(
+        "CLOUDFLARE_ACCOUNT_ID".to_string(),
+        "account-id".to_string(),
+    );
+    assert_eq!(result.env, Some(expected_env));
+}
+
+#[tokio::test]
+async fn requires_cloudflare_ai_gateway_account_and_gateway_config_and_returns_scoped_env_headers()
+{
+    let missing_gateway = Arc::new(Models::new(CreateModelsOptions {
+        auth_context: Some(fake_auth_context(
+            &[
+                ("CLOUDFLARE_API_KEY", "cf-key"),
+                ("CLOUDFLARE_ACCOUNT_ID", "account-id"),
+            ],
+            &[],
+        )),
+        ..Default::default()
+    }));
+    missing_gateway.set_provider(cloudflare_ai_gateway_provider());
+    assert!(
+        missing_gateway
+            .get_auth("cloudflare-ai-gateway", None, None)
+            .await
+            .unwrap()
+            .is_none()
+    );
+
+    let configured = Arc::new(Models::new(CreateModelsOptions {
+        auth_context: Some(fake_auth_context(
+            &[
+                ("CLOUDFLARE_API_KEY", "cf-key"),
+                ("CLOUDFLARE_ACCOUNT_ID", "account-id"),
+                ("CLOUDFLARE_GATEWAY_ID", "gateway-id"),
+            ],
+            &[],
+        )),
+        ..Default::default()
+    }));
+    configured.set_provider(cloudflare_ai_gateway_provider());
+    let result = configured
+        .get_auth("cloudflare-ai-gateway", None, None)
+        .await
+        .unwrap()
+        .expect("configured");
+
+    let mut expected_headers = pi_core::ai::types::ProviderHeaders::new();
+    expected_headers.insert(
+        "cf-aig-authorization".to_string(),
+        Some("Bearer cf-key".to_string()),
+    );
+    expected_headers.insert("Authorization".to_string(), None);
+    expected_headers.insert("x-api-key".to_string(), None);
+    assert_eq!(result.auth.headers, Some(expected_headers));
+
+    let mut expected_env = ProviderEnv::new();
+    expected_env.insert(
+        "CLOUDFLARE_ACCOUNT_ID".to_string(),
+        "account-id".to_string(),
+    );
+    expected_env.insert(
+        "CLOUDFLARE_GATEWAY_ID".to_string(),
+        "gateway-id".to_string(),
+    );
+    assert_eq!(result.env, Some(expected_env));
 }
