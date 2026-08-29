@@ -100,7 +100,7 @@ upstream package).
 | `src/bedrock-provider.ts` | | exception (Bun static-embed module object; the Rust adapter is `src/ai/providers/apis.rs::bedrock_converse_stream_api`) |
 | `src/bun-oauth.ts` | | exception (Bun binary loader registration; `registerBundledOAuthFlowLoaders` has no Rust counterpart — flows link statically, documented in `src/ai/auth/oauth/load.rs`) |
 | `src/cli.ts` | | pending |
-| `src/compat.ts` | | pending |
+| `src/compat.ts` | `src/ai/compat.rs` | done (global api-provider registry, registerFauxProvider, env-key-injected global stream/complete, deprecated catalog reads) |
 | `src/compat/extension-oauth-types.ts` | `src/ai/compat.rs` | done |
 | `src/env-api-keys.ts` | `src/ai/env_api_keys.rs` | done |
 | `src/image-models.generated.ts` | `src/ai/models_generated.rs (embedded with models catalog)` | done |
@@ -109,7 +109,7 @@ upstream package).
 | `src/images-models.ts` | `src/ai/images_models.rs` | done |
 | `src/images.ts` | `src/ai/images.rs` | done |
 | `src/index.ts` | | pending |
-| `src/legacy-api-aliases.ts` | | pending |
+| `src/legacy-api-aliases.ts` | `src/ai/compat.rs` | done (deprecated per-api stream aliases) |
 | `src/model-catalog.ts` | `src/ai/model_catalog.rs` | done (identity helper; TS generics are compile-time only) |
 | `src/models-store.ts` | `src/ai/models_store.rs` | done (exercised through the models-runtime refresh tests) |
 | `src/models.generated.ts` | `src/ai/models_generated.rs (+ src/ai/data/models.generated.json via scripts/oracle/export-model-catalog.mts)` | done |
@@ -266,7 +266,7 @@ upstream package).
 | `test/cloudflare-stream.test.ts` | `tests/ai_cloudflare_stream.rs` | done (third case covers the TS `??` placeholder-fallback branch) |
 | `test/cloudflare-utils.ts` | | pending (live-credential helper; lands with the live cloudflare provider tests) |
 | `test/codex-websocket-cached-probe.ts` | | pending |
-| `test/compat-env.test.ts` | | pending |
+| `test/compat-env.test.ts` | `tests/ai_compat.rs` | done |
 | `test/constrained-sampling.test.ts` | | pending |
 | `test/context-estimate.test.ts` | | pending |
 | `test/context-overflow.test.ts` | | pending |
@@ -298,7 +298,7 @@ upstream package).
 | `test/interleaved-thinking.test.ts` | | pending |
 | `test/kimi-coding-oauth.test.ts` | `tests/ai_oauth_kimi_coding.rs` | done |
 | `test/lax-message-content.test.ts` | | pending |
-| `test/lazy-module-load.test.ts` | | pending |
+| `test/lazy-module-load.test.ts` | | exception (Node module-registry probe asserting SDK imports stay lazy under bundlers; Rust links statically so there is no lazy loading to observe — see `src/ai/providers/apis.rs`) |
 | `test/max-thinking.test.ts` | | pending |
 | `test/mistral-http-transport.test.ts` | | pending |
 | `test/mistral-raw-stop-reason.test.ts` | | pending |

@@ -1151,7 +1151,7 @@ pub struct FauxProviderHandle {
     pub provider: Arc<dyn crate::ai::models::Provider>,
     pub models: Vec<Model>,
     pub state: Arc<Mutex<FauxProviderState>>,
-    streams: Arc<FauxProviderStreams>,
+    pub(crate) streams: Arc<FauxProviderStreams>,
 }
 
 impl FauxProviderHandle {
