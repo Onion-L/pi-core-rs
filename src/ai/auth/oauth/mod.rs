@@ -2,3 +2,4 @@
 
 pub mod device_code;
 pub mod pkce;
+pub mod xai;

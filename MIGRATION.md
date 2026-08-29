@@ -94,7 +94,7 @@ upstream package).
 | `src/auth/oauth/openrouter.ts` | | pending |
 | `src/auth/oauth/pkce.ts` | `src/ai/auth/oauth/pkce.rs` | done |
 | `src/auth/oauth/radius.ts` | | pending |
-| `src/auth/oauth/xai.ts` | | pending |
+| `src/auth/oauth/xai.ts` | `src/ai/auth/oauth/xai.rs` | done (injectable transport + clock replace global fetch and `vi.setSystemTime`) |
 | `src/auth/resolve.ts` | `src/ai/auth/resolve.rs` | done |
 | `src/auth/types.ts` | `src/ai/auth/types.rs` | done |
 | `src/bedrock-provider.ts` | | pending |
@@ -366,7 +366,7 @@ upstream package).
 | `test/unicode-surrogate.test.ts` | | pending |
 | `test/uuid.test.ts` | | pending |
 | `test/validation.test.ts` | | pending |
-| `test/xai-oauth.test.ts` | | pending |
+| `test/xai-oauth.test.ts` | `tests/ai_oauth_xai.rs` | done |
 | `test/xai-responses.test.ts` | | pending |
 | `test/xhigh.test.ts` | | pending |
 | `test/xiaomi-models.test.ts` | | pending |
