@@ -49,9 +49,9 @@ upstream package).
 
 | TypeScript source | Rust module | Status |
 |---|---|---|
-| `src/api/anthropic-messages.lazy.ts` | | pending |
+| `src/api/anthropic-messages.lazy.ts` | `src/ai/providers/apis.rs` | done |
 | `src/api/anthropic-messages.ts` | `src/ai/api/anthropic_messages.rs` | done |
-| `src/api/azure-openai-responses.lazy.ts` | | pending |
+| `src/api/azure-openai-responses.lazy.ts` | `src/ai/providers/apis.rs` | done |
 | `src/api/azure-openai-responses.ts` | `src/ai/api/azure_openai_responses.rs` | done |
 | `src/api/bedrock-converse-stream.lazy.ts` | | pending |
 | `src/api/bedrock-converse-stream.ts` | | pending |
@@ -59,25 +59,25 @@ upstream package).
 | `src/api/cloudflare.ts` | `src/ai/api/cloudflare.rs` | done |
 | `src/api/constrained-sampling.ts` | `src/ai/api/constrained-sampling.rs` | done |
 | `src/api/github-copilot-headers.ts` | `src/ai/api/github-copilot-headers.rs` | done |
-| `src/api/google-generative-ai.lazy.ts` | | pending |
+| `src/api/google-generative-ai.lazy.ts` | `src/ai/providers/apis.rs` | done |
 | `src/api/google-generative-ai.ts` | `src/ai/api/google_generative_ai.rs` | done |
 | `src/api/google-shared.ts` | `src/ai/api/google_shared.rs` | done |
-| `src/api/google-vertex.lazy.ts` | | pending |
+| `src/api/google-vertex.lazy.ts` | `src/ai/providers/apis.rs` | done |
 | `src/api/google-vertex.ts` | `src/ai/api/google_vertex.rs` | done |
-| `src/api/lazy.ts` | | pending |
-| `src/api/mistral-conversations.lazy.ts` | | pending |
+| `src/api/lazy.ts` | `src/ai/providers/apis.rs` | done (lazy loading collapses to direct dispatch; the Node module-registry probe in `test/lazy-module-load.test.ts` has no Rust equivalent — disposition recorded with `src/providers/all.ts`) |
+| `src/api/mistral-conversations.lazy.ts` | `src/ai/providers/apis.rs` | done |
 | `src/api/mistral-conversations.ts` | `src/ai/api/mistral_conversations.rs` | done |
-| `src/api/openai-codex-responses.lazy.ts` | | pending |
+| `src/api/openai-codex-responses.lazy.ts` | `src/ai/providers/apis.rs` | done |
 | `src/api/openai-codex-responses.ts` | `src/ai/api/openai_codex_responses.rs` | done (SSE transport; WebSocket transport + zstd compression deferred, see note) |
-| `src/api/openai-completions.lazy.ts` | | pending |
+| `src/api/openai-completions.lazy.ts` | `src/ai/providers/apis.rs` | done |
 | `src/api/openai-completions.ts` | `src/ai/api/openai_completions.rs` | done |
 | `src/api/openai-prompt-cache.ts` | `src/ai/api/openai_completions.rs` | done |
 | `src/api/openai-responses-shared.ts` | `src/ai/api/openai_responses_shared.rs` | done |
-| `src/api/openai-responses.lazy.ts` | | pending |
+| `src/api/openai-responses.lazy.ts` | `src/ai/providers/apis.rs` | done |
 | `src/api/openai-responses.ts` | `src/ai/api/openai_responses.rs` | done |
 | `src/api/openrouter-images.lazy.ts` | | pending |
 | `src/api/openrouter-images.ts` | `src/ai/api/openrouter_images.rs` | done (transport cannot observe the abort token; a pre-flight cancellation check replaces OpenAI-SDK signal handling) |
-| `src/api/pi-messages.lazy.ts` | | pending |
+| `src/api/pi-messages.lazy.ts` | `src/ai/providers/apis.rs` | done |
 | `src/api/pi-messages.ts` | `src/ai/api/pi_messages.rs` | done |
 | `src/api/simple-options.ts` | `src/ai/api/simple-options.rs` | done |
 | `src/api/transform-messages.ts` | `src/ai/api/transform-messages.rs` | done |

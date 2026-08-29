@@ -68,6 +68,12 @@ pub trait ProviderStreams: Send + Sync {
     ) -> Option<BoxFuture<'static, Result<(), ModelsError>>> {
         None
     }
+
+    /// Capability probe standing in for the TypeScript
+    /// `entry.fetchDeferred !== undefined` check in `createProvider`.
+    fn supports_deferred(&self) -> bool {
+        false
+    }
 }
 
 /// Port of `RefreshModelsContext`.
@@ -1141,8 +1147,39 @@ pub struct CreateProviderOptions {
     /// Fetch a dynamic model overlay.
     pub fetch_models: Option<FetchModelsFn>,
     pub filter_models: Option<FilterModelsFn>,
-    /// Single implementation for all models.
-    pub api: Arc<dyn ProviderStreams>,
+    /// One implementation for all models, or an api-keyed map that dispatches
+    /// on `model.api`.
+    pub api: ProviderApi,
+}
+
+/// The `api` field of [`CreateProviderOptions`]: a single implementation or
+/// an api-keyed map. Port of the `ProviderStreams | Record<Api, ProviderStreams>`
+/// union from `createProvider`.
+pub enum ProviderApi {
+    Single(Arc<dyn ProviderStreams>),
+    ByApi(std::collections::BTreeMap<String, Arc<dyn ProviderStreams>>),
+}
+
+impl From<Arc<dyn ProviderStreams>> for ProviderApi {
+    fn from(api: Arc<dyn ProviderStreams>) -> Self {
+        ProviderApi::Single(api)
+    }
+}
+
+impl ProviderApi {
+    fn for_model(&self, model: &Model) -> Option<Arc<dyn ProviderStreams>> {
+        match self {
+            ProviderApi::Single(api) => Some(Arc::clone(api)),
+            ProviderApi::ByApi(by_api) => by_api.get(model.api.as_str()).cloned(),
+        }
+    }
+
+    fn entries(&self) -> Vec<Arc<dyn ProviderStreams>> {
+        match self {
+            ProviderApi::Single(api) => vec![Arc::clone(api)],
+            ProviderApi::ByApi(by_api) => by_api.values().cloned().collect(),
+        }
+    }
 }
 
 /// Port of `createProvider`: builds a provider from parts.
@@ -1161,7 +1198,7 @@ pub struct BasicProvider {
     dynamic_models: Arc<Mutex<Vec<Model>>>,
     fetch_models: Option<FetchModelsFn>,
     filter_models: Option<FilterModelsFn>,
-    api: Arc<dyn ProviderStreams>,
+    api: ProviderApi,
 }
 
 impl BasicProvider {
@@ -1195,11 +1232,25 @@ impl BasicProvider {
         merged
     }
 
+    /// Port of `dispatch`: an api map entry missing for the model's api
+    /// terminates the stream with a `ModelsError` ("stream").
     fn dispatch(
         &self,
+        model: &Model,
         run: impl FnOnce(&dyn ProviderStreams) -> AssistantMessageEventStream,
     ) -> AssistantMessageEventStream {
-        run(self.api.as_ref())
+        match self.api.for_model(model) {
+            Some(streams) => run(streams.as_ref()),
+            None => lazy_stream(model, || {
+                std::future::ready(Err(ModelsError::new(
+                    ModelsErrorCode::Stream,
+                    format!(
+                        "Provider {} has no API implementation for \"{}\"",
+                        self.id, model.api
+                    ),
+                )))
+            }),
+        }
     }
 }
 
@@ -1322,7 +1373,7 @@ impl Provider for BasicProvider {
         context: &Context,
         options: Option<&StreamOptions>,
     ) -> AssistantMessageEventStream {
-        self.dispatch(|streams| streams.stream(model, context, options))
+        self.dispatch(model, |streams| streams.stream(model, context, options))
     }
 
     fn stream_simple(
@@ -1331,7 +1382,72 @@ impl Provider for BasicProvider {
         context: &Context,
         options: Option<&SimpleStreamOptions>,
     ) -> AssistantMessageEventStream {
-        self.dispatch(|streams| streams.stream_simple(model, context, options))
+        self.dispatch(model, |streams| {
+            streams.stream_simple(model, context, options)
+        })
+    }
+
+    fn fetch_deferred(
+        &self,
+        model: &Model,
+        handle: &DeferredHandle,
+        options: Option<&ProviderRequestOptions>,
+    ) -> Option<AssistantMessageEventStream> {
+        // Only wired when at least one implementation supports deferred
+        // responses, mirroring `createProvider`.
+        if !self
+            .api
+            .entries()
+            .iter()
+            .any(|entry| entry.supports_deferred())
+        {
+            return None;
+        }
+        if let Some(implementation) = self.api.for_model(model) {
+            return implementation.fetch_deferred(model, handle, options);
+        }
+        Some(lazy_stream(model, || {
+            std::future::ready(Err(ModelsError::new(
+                ModelsErrorCode::Provider,
+                format!(
+                    "Provider {} does not support deferred responses for \"{}\"",
+                    self.id, model.api
+                ),
+            )))
+        }))
+    }
+
+    fn cancel_deferred(
+        &self,
+        model: &Model,
+        handle: &DeferredHandle,
+        options: Option<&ProviderRequestOptions>,
+    ) -> Option<BoxFuture<'static, Result<(), ModelsError>>> {
+        if !self
+            .api
+            .entries()
+            .iter()
+            .any(|entry| entry.supports_deferred())
+        {
+            return None;
+        }
+        let implementation = self.api.for_model(model)?;
+        let model = model.clone();
+        let handle = handle.clone();
+        let options = options.cloned();
+        let provider_id = self.id.clone();
+        Some(Box::pin(async move {
+            match implementation.cancel_deferred(&model, &handle, options.as_ref()) {
+                Some(future) => future.await,
+                None => Err(ModelsError::new(
+                    ModelsErrorCode::Provider,
+                    format!(
+                        "Provider {provider_id} cannot cancel deferred responses for \"{}\"",
+                        model.api
+                    ),
+                )),
+            }
+        }))
     }
 }
 

@@ -1123,7 +1123,9 @@ pub fn faux_provider(options: RegisterFauxProviderOptions) -> FauxProviderHandle
         models: models.clone(),
         fetch_models: None,
         filter_models: None,
-        api: Arc::clone(&streams) as Arc<dyn ProviderStreams>,
+        api: crate::ai::models::ProviderApi::Single(
+            Arc::clone(&streams) as Arc<dyn ProviderStreams>
+        ),
     }));
 
     FauxProviderHandle {

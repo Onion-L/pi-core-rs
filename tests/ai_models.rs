@@ -12,8 +12,11 @@ use pi_core::ai::providers::faux::{
     faux_text, faux_thinking, faux_tool_call,
 };
 use pi_core::ai::types::{
-    AssistantContent, Context, Message, Model, ModelThinkingLevel, StopReason, TextContent,
-    ThinkingContent, ToolCall, UserContent, UserMessage,
+    AssistantContent, Context, Message, Model, ModelInput, ModelThinkingLevel, SimpleStreamOptions,
+    StopReason, StreamOptions, TextContent, ThinkingContent, ToolCall, UserContent, UserMessage,
+};
+use pi_core::ai::utils::event_stream::{
+    AssistantMessageEventStream, create_assistant_message_event_stream,
 };
 
 fn user_context(content: &str) -> Context {
@@ -379,6 +382,106 @@ async fn models_runtime_requires_known_provider() {
     assert_eq!(
         response.error_message.as_deref(),
         Some("Unknown provider: faux")
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Multi-api dispatch: port of the "produces a stream error for a model whose
+// api has no implementation" case from `pi-core/ai/test/providers.test.ts`.
+
+/// The `testModel` fixture from providers.test.ts.
+fn provider_test_model(api: &str, id: &str) -> Model {
+    Model {
+        id: id.to_string(),
+        name: id.to_string(),
+        api: api.to_string(),
+        provider: "mixed".to_string(),
+        base_url: "https://example.test/v1".to_string(),
+        reasoning: false,
+        input: vec![ModelInput::Text],
+        context_window: 10_000,
+        max_tokens: 1000,
+        ..Default::default()
+    }
+}
+
+#[derive(Default)]
+struct NoopStreams;
+
+impl pi_core::ai::models::ProviderStreams for NoopStreams {
+    fn stream(
+        &self,
+        _model: &Model,
+        _context: &Context,
+        _options: Option<&StreamOptions>,
+    ) -> AssistantMessageEventStream {
+        create_assistant_message_event_stream()
+    }
+
+    fn stream_simple(
+        &self,
+        _model: &Model,
+        _context: &Context,
+        _options: Option<&SimpleStreamOptions>,
+    ) -> AssistantMessageEventStream {
+        create_assistant_message_event_stream()
+    }
+}
+
+struct TestApiKeyAuth;
+
+impl pi_core::ai::auth::types::ApiKeyAuth for TestApiKeyAuth {
+    fn name(&self) -> &str {
+        "Test"
+    }
+
+    fn resolve(
+        &self,
+        _input: pi_core::ai::auth::types::ApiKeyAuthInput,
+    ) -> pi_core::ai::auth::types::AuthFuture<
+        Result<
+            Option<pi_core::ai::auth::types::AuthResult>,
+            pi_core::ai::auth::types::AuthStorageError,
+        >,
+    > {
+        Box::pin(std::future::ready(Ok(Some(
+            pi_core::ai::auth::types::AuthResult::default(),
+        ))))
+    }
+}
+
+#[tokio::test]
+async fn produces_a_stream_error_for_a_model_whose_api_has_no_implementation() {
+    let mut by_api = std::collections::BTreeMap::new();
+    by_api.insert(
+        "api-a".to_string(),
+        Arc::new(NoopStreams) as Arc<dyn pi_core::ai::models::ProviderStreams>,
+    );
+    let provider =
+        pi_core::ai::models::create_provider(pi_core::ai::models::CreateProviderOptions {
+            id: "mixed".to_string(),
+            name: None,
+            base_url: None,
+            headers: None,
+            auth: pi_core::ai::auth::types::ProviderAuth::api_key(Arc::new(TestApiKeyAuth)),
+            models: vec![provider_test_model("api-a", "model-a")],
+            fetch_models: None,
+            filter_models: None,
+            api: pi_core::ai::models::ProviderApi::ByApi(by_api),
+        });
+
+    let context = Context::default();
+    let result = provider
+        .stream_simple(&provider_test_model("api-ghost", "model-x"), &context, None)
+        .result()
+        .await;
+
+    assert_eq!(result.stop_reason, StopReason::Error);
+    assert!(
+        result
+            .error_message
+            .as_deref()
+            .is_some_and(|message| message.contains("no API implementation"))
     );
 }
 
