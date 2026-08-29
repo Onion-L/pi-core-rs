@@ -60,7 +60,7 @@ upstream package).
 | `src/api/constrained-sampling.ts` | `src/ai/api/constrained-sampling.rs` | done |
 | `src/api/github-copilot-headers.ts` | `src/ai/api/github-copilot-headers.rs` | done |
 | `src/api/google-generative-ai.lazy.ts` | | pending |
-| `src/api/google-generative-ai.ts` | | pending |
+| `src/api/google-generative-ai.ts` | `src/ai/api/google_generative_ai.rs` | done |
 | `src/api/google-shared.ts` | `src/ai/api/google_shared.rs` | done |
 | `src/api/google-vertex.lazy.ts` | | pending |
 | `src/api/google-vertex.ts` | | pending |
