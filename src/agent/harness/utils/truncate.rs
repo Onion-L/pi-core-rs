@@ -17,14 +17,16 @@ pub const DEFAULT_MAX_BYTES: usize = 50 * 1024;
 pub const GREP_MAX_LINE_LENGTH: usize = 500;
 
 /// Which limit was hit.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum TruncatedBy {
     Lines,
     Bytes,
 }
 
 /// Port of `TruncationResult`.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TruncationResult {
     /// The truncated content.
     pub content: String,
@@ -51,7 +53,8 @@ pub struct TruncationResult {
 }
 
 /// Port of `TruncationOptions`.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TruncationOptions {
     pub max_lines: Option<usize>,
     pub max_bytes: Option<usize>,

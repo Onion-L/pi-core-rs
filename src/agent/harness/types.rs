@@ -14,7 +14,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::ai::types::{CacheRetention, Transport};
 
-use super::super::types::AgentToolResult;
+pub use crate::agent::types::AgentToolResult;
 
 /// Port of `Skill`: a skill loaded from a `SKILL.md` file or provided by an
 /// application.
