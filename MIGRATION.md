@@ -66,7 +66,7 @@ upstream package).
 | `src/api/google-vertex.ts` | | pending |
 | `src/api/lazy.ts` | | pending |
 | `src/api/mistral-conversations.lazy.ts` | | pending |
-| `src/api/mistral-conversations.ts` | | pending |
+| `src/api/mistral-conversations.ts` | `src/ai/api/mistral_conversations.rs` | done |
 | `src/api/openai-codex-responses.lazy.ts` | | pending |
 | `src/api/openai-codex-responses.ts` | | pending |
 | `src/api/openai-completions.lazy.ts` | | pending |
