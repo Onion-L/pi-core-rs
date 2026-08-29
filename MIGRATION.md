@@ -203,27 +203,27 @@ upstream package).
 | `src/providers/zai.ts` | | pending |
 | `src/session-resources.ts` | | pending |
 | `src/types.ts` | `src/ai/types.rs` | done |
-| `src/utils/abort-signals.ts` | | pending |
-| `src/utils/abort.ts` | | pending |
-| `src/utils/deferred-tools.ts` | | pending |
-| `src/utils/diagnostics.ts` | | pending |
+| `src/utils/abort-signals.ts` | `src/ai/utils/abort.rs` | done |
+| `src/utils/abort.ts` | `src/ai/utils/abort.rs` | done |
+| `src/utils/deferred-tools.ts` | `src/ai/utils/deferred_tools.rs` | done |
+| `src/utils/diagnostics.ts` | `src/ai/utils/diagnostics.rs` | done |
 | `src/utils/error-body.ts` | | pending |
-| `src/utils/estimate.ts` | | pending |
-| `src/utils/event-stream.ts` | | pending |
-| `src/utils/hash.ts` | | pending |
-| `src/utils/headers.ts` | | pending |
-| `src/utils/json-parse.ts` | | pending |
+| `src/utils/estimate.ts` | `src/ai/utils/estimate.rs` | done |
+| `src/utils/event-stream.ts` | `src/ai/utils/event_stream.rs` | done |
+| `src/utils/hash.ts` | `src/ai/utils/text.rs (short_hash)` | done |
+| `src/utils/headers.ts` | `src/ai/utils/headers.rs` | done |
+| `src/utils/json-parse.ts` | `src/ai/utils/json_parse.rs` | done |
 | `src/utils/node-http-proxy.ts` | | pending |
-| `src/utils/overflow.ts` | | pending |
+| `src/utils/overflow.ts` | `src/ai/utils/overflow.rs` | done |
 | `src/utils/pi-user-agent.ts` | | pending |
-| `src/utils/provider-env.ts` | | pending |
+| `src/utils/provider-env.ts` | `src/ai/utils/provider_env.rs` | done |
 | `src/utils/provider-retry.ts` | | pending |
 | `src/utils/retry.ts` | | pending |
-| `src/utils/sanitize-unicode.ts` | | pending |
-| `src/utils/sleep.ts` | | pending |
-| `src/utils/text.ts` | | pending |
+| `src/utils/sanitize-unicode.ts` | `src/ai/utils/sanitize_unicode.rs` | done |
+| `src/utils/sleep.ts` | `src/ai/utils/abort.rs (abortable_sleep)` | done |
+| `src/utils/text.ts` | `src/ai/utils/text.rs` | done |
 | `src/utils/typebox-helpers.ts` | | pending |
-| `src/utils/uuid.ts` | | pending |
+| `src/utils/uuid.ts` | `src/ai/utils/uuid.rs` | done |
 | `src/utils/validation.ts` | | pending |
 
 ### Tests

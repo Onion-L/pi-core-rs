@@ -492,9 +492,10 @@ pub struct Usage {
 }
 
 /// Port of `StopReason`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum StopReason {
+    #[default]
     Pending,
     Stop,
     Length,
@@ -538,7 +539,7 @@ pub struct UserMessage {
 }
 
 /// Port of `AssistantMessage`.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AssistantMessage {
     pub role: RoleAssistant,
