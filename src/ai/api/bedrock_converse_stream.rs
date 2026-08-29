@@ -1624,10 +1624,7 @@ mod tests {
 
     /// Serializes the tests that mutate the process environment.
     fn env_lock() -> std::sync::MutexGuard<'static, ()> {
-        static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
-        LOCK.get_or_init(|| std::sync::Mutex::new(()))
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        crate::ai::test_env_lock()
     }
 
     fn set_env(name: &str, value: &str) {

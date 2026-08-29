@@ -16,3 +16,16 @@ pub mod providers;
 pub mod session_resources;
 pub mod types;
 pub mod utils;
+
+/// Serializes `#[cfg(test)]` code that reads or mutates process
+/// environment variables. Env-var access is process-global, so parallel
+/// tests observing the ambient environment (for example
+/// `env_api_keys::tests` and the bedrock credential tests) must share this
+/// lock to avoid racing each other.
+#[cfg(test)]
+pub(crate) fn test_env_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+    LOCK.get_or_init(|| std::sync::Mutex::new(()))
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}

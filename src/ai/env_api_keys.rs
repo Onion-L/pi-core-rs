@@ -180,6 +180,9 @@ mod tests {
 
     #[test]
     fn finds_and_resolves_provider_env_keys() {
+        // Reads the ambient environment; share the env-var lock with tests
+        // that mutate it.
+        let _guard = crate::ai::test_env_lock();
         let env = env_from(&[
             ("OPENAI_API_KEY", "sk-openai"),
             ("GEMINI_API_KEY", "gemini-key"),
@@ -223,6 +226,7 @@ mod tests {
 
     #[test]
     fn bedrock_reports_authenticated_without_a_key() {
+        let _guard = crate::ai::test_env_lock();
         let env = env_from(&[
             ("AWS_ACCESS_KEY_ID", "id"),
             ("AWS_SECRET_ACCESS_KEY", "secret"),
