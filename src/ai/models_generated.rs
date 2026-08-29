@@ -18,14 +18,18 @@ use std::sync::OnceLock;
 use crate::ai::types::{ImagesModel, Model};
 
 /// Provider-keyed model catalog: `{ [providerId]: { [modelId]: Model } }`.
-pub type ProviderModels = BTreeMap<String, BTreeMap<String, Model>>;
+/// The inner maps use `IndexMap` so model
+/// lists keep the generator's insertion order — the observable
+/// `Object.values` order in TypeScript.
+pub type ProviderModels = BTreeMap<String, indexmap::IndexMap<String, Model>>;
 
 /// Provider-keyed image model catalog.
-pub type ProviderImagesModels = BTreeMap<String, BTreeMap<String, ImagesModel>>;
+pub type ProviderImagesModels = BTreeMap<String, indexmap::IndexMap<String, ImagesModel>>;
 
 struct CatalogData {
     models: ProviderModels,
     image_models: ProviderImagesModels,
+    generated_at: Option<String>,
 }
 
 fn catalog_data() -> &'static CatalogData {
@@ -37,13 +41,84 @@ fn catalog_data() -> &'static CatalogData {
             models: ProviderModels,
             #[serde(rename = "imageModels")]
             image_models: ProviderImagesModels,
+            #[serde(rename = "generatedAt", default)]
+            generated_at: Option<String>,
         }
         let payload: Payload = serde_json::from_str(raw).expect("generated model catalog parses");
         CatalogData {
             models: payload.models,
             image_models: payload.image_models,
+            generated_at: payload.generated_at,
         }
     })
+}
+
+/// The manifest generation timestamp shared by all built-in catalogs, as
+/// epoch milliseconds (`Date.parse` of `generatedAt`; `None` when absent or
+/// unparseable). Port of `getBuiltinModelDataGeneratedAt`.
+pub fn generated_at() -> Option<i64> {
+    parse_rfc3339_millis(catalog_data().generated_at.as_deref()?)
+}
+
+/// Parses the RFC 3339 timestamps the oracle manifest emits
+/// (`YYYY-MM-DDTHH:MM:SS(.fff)?Z`), mirroring `Date.parse` for that shape.
+fn parse_rfc3339_millis(value: &str) -> Option<i64> {
+    let parse_part = |text: &str, digits: usize| -> Option<i64> {
+        if text.len() != digits || !text.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        text.parse::<i64>().ok()
+    };
+    let date_time = value.strip_suffix('Z')?;
+    let [date, time] = date_time.split('T').collect::<Vec<_>>()[..2] else {
+        return None;
+    };
+    let [year, month, day] = date.split('-').collect::<Vec<_>>()[..3] else {
+        return None;
+    };
+    let (time, fraction) = match time.split_once('.') {
+        Some((whole, fraction)) => (whole, Some(fraction)),
+        None => (time, None),
+    };
+    let millis = match fraction {
+        Some(fraction) => {
+            if fraction.is_empty() || !fraction.bytes().all(|b| b.is_ascii_digit()) {
+                return None;
+            }
+            let padded: String = fraction.chars().take(3).collect::<String>()
+                + &"0".repeat(3usize.saturating_sub(fraction.len().min(3)));
+            if padded.len() != 3 || !padded.bytes().all(|b| b.is_ascii_digit()) {
+                return None;
+            }
+            padded.parse::<i64>().ok()?
+        }
+        None => 0,
+    };
+    let [hour, minute, second] = time.split(':').collect::<Vec<_>>()[..3] else {
+        return None;
+    };
+    let (year, month, day) = (
+        parse_part(year, 4)?,
+        parse_part(month, 2)?,
+        parse_part(day, 2)?,
+    );
+    let (hour, minute, second) = (
+        parse_part(hour, 2)?,
+        parse_part(minute, 2)?,
+        parse_part(second, 2)?,
+    );
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+    // Days from civil (Howard Hinnant's algorithm).
+    let years = if month <= 2 { year - 1 } else { year };
+    let era = if years >= 0 { years } else { years - 399 } / 400;
+    let year_of_era = years - era * 400;
+    let month_shifted = if month > 2 { month - 3 } else { month + 9 };
+    let day_of_year = (153 * month_shifted + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    let days = era * 146_097 + day_of_era - 719_468;
+    Some((((days * 24 + hour) * 60 * 60 + minute * 60 + second) * 1000) + millis)
 }
 
 /// Port of the exported `MODELS` mapping.
@@ -128,5 +203,38 @@ mod tests {
         assert_eq!(first.provider, "anthropic");
         assert!(!first.base_url.is_empty());
         assert!(first.context_window > 0);
+    }
+
+    #[test]
+    fn generated_at_matches_the_oracle_manifest() {
+        // Pinned against Date.parse of the oracle manifest timestamp.
+        assert_eq!(generated_at(), Some(1_787_987_550_149));
+        assert_eq!(parse_rfc3339_millis("not a date"), None);
+        assert_eq!(
+            parse_rfc3339_millis("2026-08-29T07:12:30Z"),
+            Some(1_787_987_550_000)
+        );
+    }
+
+    #[test]
+    fn multi_api_catalogs_keep_generation_order() {
+        // The generator groups multi-API providers by api; that order is the
+        // observable Object.values order and must survive deserialization.
+        let catalog = models_for_provider("fireworks");
+        let fireworks: Vec<&str> = catalog.iter().map(|model| model.api.as_str()).collect();
+        let last_anthropic = fireworks
+            .iter()
+            .rposition(|api| *api == "anthropic-messages")
+            .expect("anthropic models");
+        assert!(!fireworks[last_anthropic + 1..].contains(&"anthropic-messages"));
+        assert!(
+            fireworks[last_anthropic + 1..]
+                .iter()
+                .all(|api| *api == "openai-completions")
+        );
+        assert_eq!(
+            catalog[0].id,
+            "accounts/fireworks/models/deepseek-v4-flash-0731"
+        );
     }
 }

@@ -9,11 +9,19 @@
  * scripts/oracle/export-model-catalog.mts --write`).
  */
 
-import { MODELS } from "../../pi-core/ai/src/models.generated.ts";
-import { IMAGE_MODELS } from "../../pi-core/ai/src/image-models.generated.ts";
+import manifest from "../../pi-core/ai/src/providers/data/.manifest.json" with { type: "json" };
+
+// Evaluating the generated TS modules keeps object key order (the observable
+// `Object.values` order), which JSON round-trips preserve.
+const { MODELS: models } = await import("../../pi-core/ai/src/models.generated.ts");
+const { IMAGE_MODELS: imageModels } = await import("../../pi-core/ai/src/image-models.generated.ts");
 
 const write = process.argv.includes("--write");
-const payload = JSON.stringify({ models: MODELS, imageModels: IMAGE_MODELS }, null, "\t");
+const payload = JSON.stringify(
+  { models, imageModels, generatedAt: manifest.generatedAt },
+  null,
+  "\t",
+);
 
 if (write) {
   const { writeFileSync, mkdirSync } = await import("node:fs");

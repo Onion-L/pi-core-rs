@@ -75,7 +75,7 @@ upstream package).
 | `src/api/openai-responses-shared.ts` | `src/ai/api/openai_responses_shared.rs` | done |
 | `src/api/openai-responses.lazy.ts` | `src/ai/providers/apis.rs` | done |
 | `src/api/openai-responses.ts` | `src/ai/api/openai_responses.rs` | done |
-| `src/api/openrouter-images.lazy.ts` | | pending |
+| `src/api/openrouter-images.lazy.ts` | `src/ai/providers/builtin.rs` | done (direct dispatch adapter) |
 | `src/api/openrouter-images.ts` | `src/ai/api/openrouter_images.rs` | done (transport cannot observe the abort token; a pre-flight cancellation check replaces OpenAI-SDK signal handling) |
 | `src/api/pi-messages.lazy.ts` | `src/ai/providers/apis.rs` | done |
 | `src/api/pi-messages.ts` | `src/ai/api/pi_messages.rs` | done |
@@ -115,92 +115,92 @@ upstream package).
 | `src/models.generated.ts` | `src/ai/models_generated.rs (+ src/ai/data/models.generated.json via scripts/oracle/export-model-catalog.mts)` | done |
 | `src/models.ts` | `src/ai/models.rs` | done |
 | `src/oauth.ts` | `src/ai/compat.rs (type re-exports)` | done |
-| `src/providers/all.ts` | | pending |
+| `src/providers/all.ts` | `src/ai/providers/builtin.rs` | done (amazon-bedrock and radius factories land with their modules; noted in the module) |
 | `src/providers/amazon-bedrock.models.ts` | | pending |
 | `src/providers/amazon-bedrock.ts` | | pending |
-| `src/providers/ant-ling.models.ts` | | pending |
-| `src/providers/ant-ling.ts` | | pending |
+| `src/providers/ant-ling.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/ant-ling.ts` | `src/ai/providers/builtin.rs` | done |
 | `src/providers/anthropic.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
 | `src/providers/anthropic.ts` | `src/ai/providers/anthropic.rs` | done |
-| `src/providers/azure-openai-responses.models.ts` | | pending |
-| `src/providers/azure-openai-responses.ts` | | pending |
-| `src/providers/baseten.models.ts` | | pending |
-| `src/providers/baseten.ts` | | pending |
-| `src/providers/cerebras.models.ts` | | pending |
-| `src/providers/cerebras.ts` | | pending |
+| `src/providers/azure-openai-responses.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/azure-openai-responses.ts` | `src/ai/providers/builtin.rs` | done |
+| `src/providers/baseten.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/baseten.ts` | `src/ai/providers/builtin.rs` | done |
+| `src/providers/cerebras.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/cerebras.ts` | `src/ai/providers/builtin.rs` | done |
 | `src/providers/cloudflare-ai-gateway.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
 | `src/providers/cloudflare-ai-gateway.ts` | `src/ai/providers/cloudflare_ai_gateway.rs` | done |
 | `src/providers/cloudflare-auth.ts` | `src/ai/providers/cloudflare_auth.rs` | done |
 | `src/providers/cloudflare-stream.ts` | `src/ai/providers/cloudflare_stream.rs` | done |
 | `src/providers/cloudflare-workers-ai.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
 | `src/providers/cloudflare-workers-ai.ts` | `src/ai/providers/cloudflare_workers_ai.rs` | done |
-| `src/providers/deepseek.models.ts` | | pending |
-| `src/providers/deepseek.ts` | | pending |
+| `src/providers/deepseek.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/deepseek.ts` | `src/ai/providers/builtin.rs` | done |
 | `src/providers/faux.ts` | `src/ai/providers/faux.rs` | done |
-| `src/providers/fireworks.models.ts` | | pending |
-| `src/providers/fireworks.ts` | | pending |
-| `src/providers/github-copilot.models.ts` | | pending |
-| `src/providers/github-copilot.ts` | | pending |
+| `src/providers/fireworks.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/fireworks.ts` | `src/ai/providers/builtin.rs` | done |
+| `src/providers/github-copilot.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/github-copilot.ts` | `src/ai/providers/builtin.rs` | done |
 | `src/providers/google-vertex.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
 | `src/providers/google-vertex.ts` | `src/ai/providers/google_vertex.rs` | done |
-| `src/providers/google.models.ts` | | pending |
-| `src/providers/google.ts` | | pending |
-| `src/providers/groq.models.ts` | | pending |
-| `src/providers/groq.ts` | | pending |
-| `src/providers/huggingface.models.ts` | | pending |
-| `src/providers/huggingface.ts` | | pending |
+| `src/providers/google.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/google.ts` | `src/ai/providers/builtin.rs` | done |
+| `src/providers/groq.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/groq.ts` | `src/ai/providers/builtin.rs` | done |
+| `src/providers/huggingface.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/huggingface.ts` | `src/ai/providers/builtin.rs` | done |
 | `src/providers/images/register-builtins.ts` | `src/ai/images.rs` | done (openrouter-images registered statically) |
-| `src/providers/kimi-coding.models.ts` | | pending |
-| `src/providers/kimi-coding.ts` | | pending |
-| `src/providers/minimax-cn.models.ts` | | pending |
-| `src/providers/minimax-cn.ts` | | pending |
-| `src/providers/minimax.models.ts` | | pending |
-| `src/providers/minimax.ts` | | pending |
-| `src/providers/mistral.models.ts` | | pending |
-| `src/providers/mistral.ts` | | pending |
-| `src/providers/moonshotai-cn.models.ts` | | pending |
-| `src/providers/moonshotai-cn.ts` | | pending |
-| `src/providers/moonshotai.models.ts` | | pending |
-| `src/providers/moonshotai.ts` | | pending |
-| `src/providers/nvidia.models.ts` | | pending |
-| `src/providers/nvidia.ts` | | pending |
-| `src/providers/openai-codex.models.ts` | | pending |
-| `src/providers/openai-codex.ts` | | pending |
-| `src/providers/openai.models.ts` | | pending |
-| `src/providers/openai.ts` | | pending |
-| `src/providers/opencode-go.models.ts` | | pending |
-| `src/providers/opencode-go.ts` | | pending |
-| `src/providers/opencode.models.ts` | | pending |
-| `src/providers/opencode.ts` | | pending |
-| `src/providers/openrouter-images.ts` | | pending |
-| `src/providers/openrouter.models.ts` | | pending |
-| `src/providers/openrouter.ts` | | pending |
-| `src/providers/qwen-token-plan-cn.models.ts` | | pending |
-| `src/providers/qwen-token-plan-cn.ts` | | pending |
-| `src/providers/qwen-token-plan-individual.models.ts` | | pending |
-| `src/providers/qwen-token-plan-individual.ts` | | pending |
-| `src/providers/qwen-token-plan.models.ts` | | pending |
-| `src/providers/qwen-token-plan.ts` | | pending |
+| `src/providers/kimi-coding.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/kimi-coding.ts` | `src/ai/providers/builtin.rs` | done |
+| `src/providers/minimax-cn.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/minimax-cn.ts` | `src/ai/providers/builtin.rs` | done |
+| `src/providers/minimax.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/minimax.ts` | `src/ai/providers/builtin.rs` | done |
+| `src/providers/mistral.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/mistral.ts` | `src/ai/providers/builtin.rs` | done |
+| `src/providers/moonshotai-cn.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/moonshotai-cn.ts` | `src/ai/providers/builtin.rs` | done |
+| `src/providers/moonshotai.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/moonshotai.ts` | `src/ai/providers/builtin.rs` | done |
+| `src/providers/nvidia.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/nvidia.ts` | `src/ai/providers/builtin.rs` | done |
+| `src/providers/openai-codex.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/openai-codex.ts` | `src/ai/providers/builtin.rs` | done |
+| `src/providers/openai.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/openai.ts` | `src/ai/providers/builtin.rs` | done |
+| `src/providers/opencode-go.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/opencode-go.ts` | `src/ai/providers/builtin.rs` | done |
+| `src/providers/opencode.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/opencode.ts` | `src/ai/providers/builtin.rs` | done |
+| `src/providers/openrouter-images.ts` | `src/ai/providers/builtin.rs` | done |
+| `src/providers/openrouter.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/openrouter.ts` | `src/ai/providers/builtin.rs` | done |
+| `src/providers/qwen-token-plan-cn.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/qwen-token-plan-cn.ts` | `src/ai/providers/builtin.rs` | done |
+| `src/providers/qwen-token-plan-individual.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/qwen-token-plan-individual.ts` | `src/ai/providers/builtin.rs` | done |
+| `src/providers/qwen-token-plan.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/qwen-token-plan.ts` | `src/ai/providers/builtin.rs` | done |
 | `src/providers/radius-config.ts` | | pending |
 | `src/providers/radius.ts` | | pending |
-| `src/providers/together.models.ts` | | pending |
-| `src/providers/together.ts` | | pending |
-| `src/providers/vercel-ai-gateway.models.ts` | | pending |
-| `src/providers/vercel-ai-gateway.ts` | | pending |
-| `src/providers/xai.models.ts` | | pending |
-| `src/providers/xai.ts` | | pending |
-| `src/providers/xiaomi-token-plan-ams.models.ts` | | pending |
-| `src/providers/xiaomi-token-plan-ams.ts` | | pending |
-| `src/providers/xiaomi-token-plan-cn.models.ts` | | pending |
-| `src/providers/xiaomi-token-plan-cn.ts` | | pending |
-| `src/providers/xiaomi-token-plan-sgp.models.ts` | | pending |
-| `src/providers/xiaomi-token-plan-sgp.ts` | | pending |
-| `src/providers/xiaomi.models.ts` | | pending |
-| `src/providers/xiaomi.ts` | | pending |
-| `src/providers/zai-coding-cn.models.ts` | | pending |
-| `src/providers/zai-coding-cn.ts` | | pending |
-| `src/providers/zai.models.ts` | | pending |
-| `src/providers/zai.ts` | | pending |
+| `src/providers/together.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/together.ts` | `src/ai/providers/builtin.rs` | done |
+| `src/providers/vercel-ai-gateway.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/vercel-ai-gateway.ts` | `src/ai/providers/builtin.rs` | done |
+| `src/providers/xai.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/xai.ts` | `src/ai/providers/builtin.rs` | done |
+| `src/providers/xiaomi-token-plan-ams.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/xiaomi-token-plan-ams.ts` | `src/ai/providers/builtin.rs` | done |
+| `src/providers/xiaomi-token-plan-cn.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/xiaomi-token-plan-cn.ts` | `src/ai/providers/builtin.rs` | done |
+| `src/providers/xiaomi-token-plan-sgp.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/xiaomi-token-plan-sgp.ts` | `src/ai/providers/builtin.rs` | done |
+| `src/providers/xiaomi.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/xiaomi.ts` | `src/ai/providers/builtin.rs` | done |
+| `src/providers/zai-coding-cn.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/zai-coding-cn.ts` | `src/ai/providers/builtin.rs` | done |
+| `src/providers/zai.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/zai.ts` | `src/ai/providers/builtin.rs` | done |
 | `src/session-resources.ts` | `src/ai/session_resources.rs` | done |
 | `src/types.ts` | `src/ai/types.rs` | done |
 | `src/utils/abort-signals.ts` | `src/ai/utils/abort.rs` | done |
@@ -293,7 +293,7 @@ upstream package).
 | `test/google-vertex-api-key-resolution.test.ts` | | pending |
 | `test/image-model-data.test.ts` | | n/a — tests the TS oracle generator script (`scripts/generate-image-models.ts`); the generated catalog it produces is committed via `scripts/oracle/export-model-catalog.mts` |
 | `test/image-tool-result.test.ts` | | pending |
-| `test/images-models.test.ts` | `tests/ai_images_models.rs` | done (builtinImagesModels case lands with the image provider factories) |
+| `test/images-models.test.ts` | `tests/ai_images_models.rs` (+ `tests/ai_providers.rs` for the builtinImagesModels case) | done |
 | `test/images.test.ts` | | pending (live E2E, gated on OPENROUTER_API_KEY; offline surface covered by `tests/ai_openrouter_images.rs`) |
 | `test/interleaved-thinking.test.ts` | | pending |
 | `test/kimi-coding-oauth.test.ts` | `tests/ai_oauth_kimi_coding.rs` | done |
@@ -345,7 +345,7 @@ upstream package).
 | `test/provider-error-body-passthrough.test.ts` | | pending |
 | `test/provider-error-body-regression.test.ts` | | pending |
 | `test/provider-retry.test.ts` | | pending |
-| `test/providers.test.ts` | | pending |
+| `test/providers.test.ts` | `tests/ai_providers.rs` (+ `tests/ai_models.rs` for the dispatch-error case) | partial (builtin catalog, anthropic env precedence, cloudflare getAuth, vertex, envApiKeyAuth cases ported; bedrock, dynamic-refresh, deferred, faux-cases pending) |
 | `test/qwen-token-plan-models.test.ts` | | pending |
 | `test/radius-oauth.test.ts` | `tests/ai_oauth_radius.rs` | done |
 | `test/reasoning-options.test.ts` | | pending |

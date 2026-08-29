@@ -2,6 +2,7 @@
 
 pub mod anthropic;
 pub mod apis;
+pub mod builtin;
 pub mod cloudflare_ai_gateway;
 pub mod cloudflare_auth;
 pub mod cloudflare_stream;
