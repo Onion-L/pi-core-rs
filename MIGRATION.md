@@ -93,7 +93,7 @@ upstream package).
 | `src/auth/oauth/openai-codex.ts` | | pending |
 | `src/auth/oauth/openrouter.ts` | `src/ai/auth/oauth/openrouter.rs` | done (loopback callback over tokio TcpListener; callback path uses UUIDv7 in place of crypto.randomUUID) |
 | `src/auth/oauth/pkce.ts` | `src/ai/auth/oauth/pkce.rs` | done |
-| `src/auth/oauth/radius.ts` | | pending |
+| `src/auth/oauth/radius.ts` | `src/ai/auth/oauth/radius.rs` | done (loopback callback over tokio TcpListener; credential `scope` rides the extension map) |
 | `src/auth/oauth/xai.ts` | `src/ai/auth/oauth/xai.rs` | done (injectable transport + clock replace global fetch and `vi.setSystemTime`) |
 | `src/auth/resolve.ts` | `src/ai/auth/resolve.rs` | done |
 | `src/auth/types.ts` | `src/ai/auth/types.rs` | done |
@@ -347,7 +347,7 @@ upstream package).
 | `test/provider-retry.test.ts` | | pending |
 | `test/providers.test.ts` | | pending |
 | `test/qwen-token-plan-models.test.ts` | | pending |
-| `test/radius-oauth.test.ts` | | pending |
+| `test/radius-oauth.test.ts` | `tests/ai_oauth_radius.rs` | done |
 | `test/reasoning-options.test.ts` | | pending |
 | `test/responseid.test.ts` | | pending |
 | `test/retry.test.ts` | | pending |

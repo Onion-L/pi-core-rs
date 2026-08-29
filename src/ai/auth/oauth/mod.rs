@@ -6,6 +6,7 @@ pub mod kimi_coding;
 pub mod oauth_page;
 pub mod openrouter;
 pub mod pkce;
+pub mod radius;
 pub mod xai;
 
 /// Injectable wall clock (epoch milliseconds) shared by the OAuth flows.
