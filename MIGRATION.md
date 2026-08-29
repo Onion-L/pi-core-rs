@@ -141,8 +141,8 @@ upstream package).
 | `src/providers/fireworks.ts` | | pending |
 | `src/providers/github-copilot.models.ts` | | pending |
 | `src/providers/github-copilot.ts` | | pending |
-| `src/providers/google-vertex.models.ts` | | pending |
-| `src/providers/google-vertex.ts` | | pending |
+| `src/providers/google-vertex.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
+| `src/providers/google-vertex.ts` | `src/ai/providers/google_vertex.rs` | done |
 | `src/providers/google.models.ts` | | pending |
 | `src/providers/google.ts` | | pending |
 | `src/providers/groq.models.ts` | | pending |
