@@ -275,7 +275,7 @@ upstream package).
 | `test/empty.test.ts` | | pending |
 | `test/env-api-keys.test.ts` | | pending |
 | `test/error-body.test.ts` | | pending |
-| `test/faux-provider.test.ts` | | pending |
+| `test/faux-provider.test.ts` | `tests/ai_faux_provider.rs` | done (all 23 cases through the compat global API; the TS factory throw becomes `FauxResponseStep::Factory` returning `Err`, whose catch now emits the single error event) |
 | `test/fetch-option.test.ts` | | pending |
 | `test/fireworks-models.test.ts` | | pending |
 | `test/generate-models-strict.test.ts` | | pending |

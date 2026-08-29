@@ -136,16 +136,16 @@ async fn faux_provider_supports_multiple_models_and_factories() {
     models.set_provider(Arc::clone(&faux.provider));
     faux.set_responses(vec![
         FauxResponseStep::Factory(Arc::new(|_context, _options, _state, model| {
-            faux_assistant_message(
+            Ok(faux_assistant_message(
                 format!("{}:{}", model.id, model.reasoning),
                 FauxMessageOptions::default(),
-            )
+            ))
         })),
         FauxResponseStep::Factory(Arc::new(|_context, _options, _state, model| {
-            faux_assistant_message(
+            Ok(faux_assistant_message(
                 format!("{}:{}", model.id, model.reasoning),
                 FauxMessageOptions::default(),
-            )
+            ))
         })),
     ]);
 

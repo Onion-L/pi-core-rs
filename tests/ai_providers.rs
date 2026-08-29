@@ -1191,12 +1191,7 @@ async fn records_cancellation_and_returns_deferred_fetch_failures_in_band() {
     // The TS case rejects from a response factory; the Rust factory port
     // returns the error-shaped message a rejection would surface.
     faux.set_responses(vec![
-        FauxResponseStep::Factory(Arc::new(|_, _, _, _| {
-            let mut message = faux_assistant_message("", FauxMessageOptions::default());
-            message.stop_reason = pi_core::ai::types::StopReason::Error;
-            message.error_message = Some("deferred failed".to_string());
-            message
-        })),
+        FauxResponseStep::Factory(Arc::new(|_, _, _, _| Err("deferred failed".to_string()))),
         FauxResponseStep::Message(Box::new(faux_assistant_message(
             "cancelled",
             FauxMessageOptions::default(),

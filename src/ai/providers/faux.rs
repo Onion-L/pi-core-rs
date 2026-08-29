@@ -48,7 +48,12 @@ pub struct FauxProviderState {
 
 /// A scripted response: either a fixed message or a factory.
 pub type FauxResponseFactory = Arc<
-    dyn Fn(&Context, Option<&SimpleStreamOptions>, &FauxProviderState, &Model) -> AssistantMessage
+    dyn Fn(
+            &Context,
+            Option<&SimpleStreamOptions>,
+            &FauxProviderState,
+            &Model,
+        ) -> Result<AssistantMessage, String>
         + Send
         + Sync,
 >;
@@ -799,8 +804,28 @@ impl ProviderStreams for FauxProviderStreams {
                 return;
             }
 
-            let message =
-                inner.resolve_response(&step, &context, stream_options.as_ref(), &request_model);
+            let message = match inner.resolve_response(
+                &step,
+                &context,
+                stream_options.as_ref(),
+                &request_model,
+            ) {
+                Ok(message) => message,
+                Err(error) => {
+                    let message = create_error_message(
+                        &error,
+                        &inner.api,
+                        &inner.provider,
+                        &request_model.id,
+                    );
+                    outer.push(AssistantMessageEvent::Error {
+                        reason: ErrorReason::Error,
+                        error: message.clone(),
+                    });
+                    outer.end(Some(message));
+                    return;
+                }
+            };
             stream_with_deltas(
                 outer.clone(),
                 message,
@@ -924,7 +949,7 @@ impl InnerStreams {
         context: &Context,
         stream_options: Option<&SimpleStreamOptions>,
         request_model: &Model,
-    ) -> AssistantMessage {
+    ) -> Result<AssistantMessage, String> {
         let resolved = match step {
             FauxResponseStep::Message(message) => *message.clone(),
             FauxResponseStep::Factory(factory) => factory(
@@ -932,14 +957,19 @@ impl InnerStreams {
                 stream_options,
                 &self.state.lock().unwrap(),
                 request_model,
-            ),
+            )?,
         };
         let cloned = clone_message(&resolved, &self.api, &self.provider, &request_model.id);
         let mut cache = self
             .prompt_cache
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        with_usage_estimate(cloned, context, stream_options, &mut cache)
+        Ok(with_usage_estimate(
+            cloned,
+            context,
+            stream_options,
+            &mut cache,
+        ))
     }
 }
 
@@ -1013,7 +1043,11 @@ async fn run_deferred_fetch(
                 model,
                 options,
             } = data;
-            let final_message = inner.resolve_response(&step, &context, options.as_ref(), &model);
+            let final_message = inner
+                .resolve_response(&step, &context, options.as_ref(), &model)
+                .unwrap_or_else(|error| {
+                    create_error_message(&error, &inner.api, &inner.provider, &model.id)
+                });
             let mut entries = inner
                 .deferred_responses
                 .lock()
