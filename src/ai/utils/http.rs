@@ -78,6 +78,11 @@ impl HttpResponse {
     }
 }
 
+/// Collects the response body as text (lossy on invalid UTF-8).
+pub async fn collect_text(response: HttpResponse) -> String {
+    String::from_utf8_lossy(&response.bytes().await.unwrap_or_default()).to_string()
+}
+
 /// Errors surfaced by the HTTP transport.
 #[derive(Debug)]
 pub enum HttpFetchError {

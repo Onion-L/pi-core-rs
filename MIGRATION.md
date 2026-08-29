@@ -50,7 +50,7 @@ upstream package).
 | TypeScript source | Rust module | Status |
 |---|---|---|
 | `src/api/anthropic-messages.lazy.ts` | | pending |
-| `src/api/anthropic-messages.ts` | | pending |
+| `src/api/anthropic-messages.ts` | `src/ai/api/anthropic_messages.rs` | done |
 | `src/api/azure-openai-responses.lazy.ts` | | pending |
 | `src/api/azure-openai-responses.ts` | | pending |
 | `src/api/bedrock-converse-stream.lazy.ts` | | pending |
