@@ -77,6 +77,19 @@ pub fn image_models_for_provider(provider: &str) -> Vec<ImagesModel> {
         .unwrap_or_default()
 }
 
+/// Port of `getImageModel`: exact provider+id image model lookup.
+pub fn image_model(provider: &str, id: &str) -> Option<ImagesModel> {
+    image_models()
+        .get(provider)
+        .and_then(|models| models.get(id))
+        .cloned()
+}
+
+/// Port of `getImageProviders`: image model provider ids.
+pub fn image_provider_ids() -> Vec<String> {
+    image_models().keys().cloned().collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

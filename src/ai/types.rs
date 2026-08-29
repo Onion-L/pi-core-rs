@@ -1302,6 +1302,27 @@ pub type OnResponseCallbackImages = Arc<
         + Sync,
 >;
 
+/// Port of `ImagesOptions`: `ProviderRequestOptions<ImagesModel>` plus the
+/// images-specific `metadata` field.
+#[derive(Clone, Default)]
+pub struct ImagesOptions {
+    pub signal: Option<tokio_util::sync::CancellationToken>,
+    pub telemetry_context: Option<Arc<dyn TelemetryContext>>,
+    pub api_key: Option<String>,
+    pub fetch: Option<FetchFunction>,
+    pub env: Option<ProviderEnv>,
+    pub on_payload: Option<OnPayloadCallbackImages>,
+    pub on_response: Option<OnResponseCallbackImages>,
+    pub headers: Option<ProviderHeaders>,
+    pub timeout_ms: Option<u64>,
+    pub max_retries: Option<u32>,
+    pub max_retry_delay_ms: Option<u64>,
+    /// Preserves unknown TypeScript option fields for forward compatibility.
+    pub extra: BTreeMap<String, serde_json::Value>,
+    /// Optional metadata to include in API requests.
+    pub metadata: Option<BTreeMap<String, serde_json::Value>>,
+}
+
 /// Port of `StreamOptions`.
 #[derive(Clone, Default)]
 pub struct StreamOptions {

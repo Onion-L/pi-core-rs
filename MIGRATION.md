@@ -104,10 +104,10 @@ upstream package).
 | `src/compat/extension-oauth-types.ts` | `src/ai/compat.rs` | done |
 | `src/env-api-keys.ts` | `src/ai/env_api_keys.rs` | done |
 | `src/image-models.generated.ts` | `src/ai/models_generated.rs (embedded with models catalog)` | done |
-| `src/image-models.ts` | | pending |
-| `src/images-api-registry.ts` | | pending |
-| `src/images-models.ts` | | pending |
-| `src/images.ts` | | pending |
+| `src/image-models.ts` | `src/ai/models_generated.rs` | done (`image_model`/`image_provider_ids`/`image_models_for_provider`) |
+| `src/images-api-registry.ts` | `src/ai/images.rs` | done (static dispatch; lazy module loading is a compile-time no-op in Rust) |
+| `src/images-models.ts` | `src/ai/images_models.rs` | done |
+| `src/images.ts` | `src/ai/images.rs` | done |
 | `src/index.ts` | | pending |
 | `src/legacy-api-aliases.ts` | | pending |
 | `src/model-catalog.ts` | `src/ai/model_catalog.rs` | done (identity helper; TS generics are compile-time only) |
@@ -149,7 +149,7 @@ upstream package).
 | `src/providers/groq.ts` | | pending |
 | `src/providers/huggingface.models.ts` | | pending |
 | `src/providers/huggingface.ts` | | pending |
-| `src/providers/images/register-builtins.ts` | | pending |
+| `src/providers/images/register-builtins.ts` | `src/ai/images.rs` | done (openrouter-images registered statically) |
 | `src/providers/kimi-coding.models.ts` | | pending |
 | `src/providers/kimi-coding.ts` | | pending |
 | `src/providers/minimax-cn.models.ts` | | pending |
@@ -291,10 +291,10 @@ upstream package).
 | `test/google-thinking-level-map.test.ts` | | pending |
 | `test/google-thinking-signature.test.ts` | | pending |
 | `test/google-vertex-api-key-resolution.test.ts` | | pending |
-| `test/image-model-data.test.ts` | | pending |
+| `test/image-model-data.test.ts` | | n/a — tests the TS oracle generator script (`scripts/generate-image-models.ts`); the generated catalog it produces is committed via `scripts/oracle/export-model-catalog.mts` |
 | `test/image-tool-result.test.ts` | | pending |
-| `test/images-models.test.ts` | | pending |
-| `test/images.test.ts` | | pending |
+| `test/images-models.test.ts` | `tests/ai_images_models.rs` | done (builtinImagesModels case lands with the image provider factories) |
+| `test/images.test.ts` | | pending (live E2E, gated on OPENROUTER_API_KEY; offline surface covered by `tests/ai_openrouter_images.rs`) |
 | `test/interleaved-thinking.test.ts` | | pending |
 | `test/kimi-coding-oauth.test.ts` | | pending |
 | `test/lax-message-content.test.ts` | | pending |

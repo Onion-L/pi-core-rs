@@ -7,8 +7,8 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 
 use crate::ai::types::{
-    AssistantImages, BlockContent, FetchFunction, ImagesContext, ImagesModel, ImagesStopReason,
-    OnPayloadCallbackImages, OnResponseCallbackImages, ProviderEnv, ProviderHeaders, Usage,
+    AssistantImages, BlockContent, ImagesContext, ImagesModel, ImagesStopReason, ProviderHeaders,
+    Usage,
 };
 use crate::ai::utils::error_body::{
     ProviderErrorParts, format_provider_error, normalize_provider_error,
@@ -19,28 +19,8 @@ use crate::ai::utils::provider_retry::{
 };
 use crate::ai::utils::reqwest_fetch::default_fetch;
 use crate::ai::utils::sanitize_unicode::sanitize_surrogates;
-use crate::telemetry::TelemetryContext;
 
-/// Port of `ImagesOptions`: `ProviderRequestOptions<ImagesModel>` plus the
-/// images-specific `metadata` field.
-#[derive(Clone, Default)]
-pub struct ImagesOptions {
-    pub signal: Option<tokio_util::sync::CancellationToken>,
-    pub telemetry_context: Option<Arc<dyn TelemetryContext>>,
-    pub api_key: Option<String>,
-    pub fetch: Option<FetchFunction>,
-    pub env: Option<ProviderEnv>,
-    pub on_payload: Option<OnPayloadCallbackImages>,
-    pub on_response: Option<OnResponseCallbackImages>,
-    pub headers: Option<ProviderHeaders>,
-    pub timeout_ms: Option<u64>,
-    pub max_retries: Option<u32>,
-    pub max_retry_delay_ms: Option<u64>,
-    /// Preserves unknown TypeScript option fields for forward compatibility.
-    pub extra: BTreeMap<String, serde_json::Value>,
-    /// Optional metadata to include in API requests.
-    pub metadata: Option<BTreeMap<String, serde_json::Value>>,
-}
+pub use crate::ai::types::ImagesOptions;
 
 /// Port of the `generateImages` images function.
 pub async fn generate_images(
