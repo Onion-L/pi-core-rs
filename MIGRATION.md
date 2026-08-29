@@ -202,7 +202,7 @@ upstream package).
 | `src/providers/zai.models.ts` | | pending |
 | `src/providers/zai.ts` | | pending |
 | `src/session-resources.ts` | | pending |
-| `src/types.ts` | | pending |
+| `src/types.ts` | `src/ai/types.rs` | done |
 | `src/utils/abort-signals.ts` | | pending |
 | `src/utils/abort.ts` | | pending |
 | `src/utils/deferred-tools.ts` | | pending |
@@ -374,6 +374,12 @@ upstream package).
 | `test/zai-coding-plan-models.test.ts` | | pending |
 | `test/zen.test.ts` | | pending |
 
+### Additional Rust modules
+
+| Rust module | Purpose | Status |
+|---|---|---|
+| `src/ai/utils/http.rs` | Transport abstraction behind the `fetch` option (`FetchFunction`); reqwest-backed default lands with the providers | done (trait) |
+
 ## pi-agent-core
 
 ### Source modules
@@ -429,7 +435,7 @@ upstream package).
 | `src/search/index.ts` | | pending |
 | `src/search/scanning.ts` | | pending |
 | `src/stream-fn.ts` | | pending |
-| `src/types.ts` | | pending |
+| `src/types.ts` | `src/ai/types.rs` | done |
 
 ### Tests
 
