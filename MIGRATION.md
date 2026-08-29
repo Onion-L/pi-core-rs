@@ -87,7 +87,7 @@ upstream package).
 | `src/auth/oauth/anthropic.ts` | | pending (with providers, M3) |
 | `src/auth/oauth/device-code.ts` | `src/ai/auth/oauth/device_code.rs` | done (tokio time drives the fake-timer tests deterministically) |
 | `src/auth/oauth/github-copilot.ts` | | pending |
-| `src/auth/oauth/kimi-coding.ts` | | pending |
+| `src/auth/oauth/kimi-coding.ts` | `src/ai/auth/oauth/kimi_coding.rs` | done (injectable transport/clock/env; tokio timeout reproduces the 30s request signal) |
 | `src/auth/oauth/load.ts` | | pending |
 | `src/auth/oauth/oauth-page.ts` | | pending |
 | `src/auth/oauth/openai-codex.ts` | | pending |
@@ -296,7 +296,7 @@ upstream package).
 | `test/images-models.test.ts` | `tests/ai_images_models.rs` | done (builtinImagesModels case lands with the image provider factories) |
 | `test/images.test.ts` | | pending (live E2E, gated on OPENROUTER_API_KEY; offline surface covered by `tests/ai_openrouter_images.rs`) |
 | `test/interleaved-thinking.test.ts` | | pending |
-| `test/kimi-coding-oauth.test.ts` | | pending |
+| `test/kimi-coding-oauth.test.ts` | `tests/ai_oauth_kimi_coding.rs` | done |
 | `test/lax-message-content.test.ts` | | pending |
 | `test/lazy-module-load.test.ts` | | pending |
 | `test/max-thinking.test.ts` | | pending |

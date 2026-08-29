@@ -10,6 +10,7 @@ use std::sync::Arc;
 use serde_json::{Map, Value};
 use tokio_util::sync::CancellationToken;
 
+use crate::ai::auth::oauth::NowMs;
 use crate::ai::auth::oauth::device_code::{
     OAuthDeviceCodePollOptions, OAuthDeviceCodePollResult, poll_oauth_device_code_flow,
 };
@@ -28,9 +29,6 @@ const XAI_TOKEN_URL: &str = "https://auth.x.ai/oauth2/token";
 /// dies mid-request.
 const REFRESH_SKEW_MS: i64 = 5 * 60 * 1000;
 const DEFAULT_TOKEN_LIFETIME_SECONDS: f64 = 3600.0;
-
-/// Injectable wall clock (epoch milliseconds).
-pub type NowMs = Arc<dyn Fn() -> i64 + Send + Sync>;
 
 /// The xAI OAuth flow. Clone-cheap; `Default` uses the reqwest transport and
 /// the real clock.
