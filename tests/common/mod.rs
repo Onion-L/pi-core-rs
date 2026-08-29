@@ -1,6 +1,8 @@
 //! Shared helpers for harness integration tests (Rust counterpart of
 //! `pi-core/agent/test/harness/session-test-utils.ts`; the `afterEach`
-//! cleanup hook becomes RAII). Not a test target.
+//! cleanup hook becomes RAII). Not a test target; unused helpers stay
+//! available for the test binaries that need them.
+#![allow(dead_code)]
 
 use std::ops::Deref;
 
