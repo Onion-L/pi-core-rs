@@ -70,8 +70,8 @@ upstream package).
 | `src/api/openai-codex-responses.lazy.ts` | | pending |
 | `src/api/openai-codex-responses.ts` | | pending |
 | `src/api/openai-completions.lazy.ts` | | pending |
-| `src/api/openai-completions.ts` | | pending |
-| `src/api/openai-prompt-cache.ts` | | pending |
+| `src/api/openai-completions.ts` | `src/ai/api/openai_completions.rs` | done |
+| `src/api/openai-prompt-cache.ts` | `src/ai/api/openai_completions.rs` | done |
 | `src/api/openai-responses-shared.ts` | | pending |
 | `src/api/openai-responses.lazy.ts` | | pending |
 | `src/api/openai-responses.ts` | | pending |
