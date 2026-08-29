@@ -68,7 +68,7 @@ upstream package).
 | `src/api/mistral-conversations.lazy.ts` | | pending |
 | `src/api/mistral-conversations.ts` | `src/ai/api/mistral_conversations.rs` | done |
 | `src/api/openai-codex-responses.lazy.ts` | | pending |
-| `src/api/openai-codex-responses.ts` | | pending |
+| `src/api/openai-codex-responses.ts` | `src/ai/api/openai_codex_responses.rs` | done (SSE transport; WebSocket transport + zstd compression deferred, see note) |
 | `src/api/openai-completions.lazy.ts` | | pending |
 | `src/api/openai-completions.ts` | `src/ai/api/openai_completions.rs` | done |
 | `src/api/openai-prompt-cache.ts` | `src/ai/api/openai_completions.rs` | done |
@@ -375,6 +375,14 @@ upstream package).
 | `test/zen.test.ts` | | pending |
 
 ### Documented deviations and deferrals
+
+- `src/api/openai-codex-responses.ts` is ported over the SSE transport
+  (request shape, URL resolution, retry policy, Codex event mapping and
+  error taxonomy are 1:1). The optional WebSocket transport
+  (`responses_websockets=2026-02-06` beta) with session cache/SSE fallback,
+  and zstd request-body compression via `node:zlib`, are runtime transport
+  optimizations without a Rust counterpart yet; the SSE path is the
+  protocol-correct fallback the TS adapter also uses.
 
 - `src/cli.ts` (Node CLI for OAuth login) and `src/bun-oauth.ts` (Bun
   credential export) are runtime entry points for the Node/Bun
