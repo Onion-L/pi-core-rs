@@ -3,6 +3,9 @@
 //! Ported in dependency order after pi-ai; per-module status lives in
 //! `MIGRATION.md` at the repository root.
 
+// `agent::agent` mirrors the TypeScript `agent.ts` module name.
+#[allow(clippy::module_inception)]
+pub mod agent;
 pub mod agent_loop;
 pub mod stream_fn;
 pub mod types;
