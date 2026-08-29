@@ -1,5 +1,6 @@
 //! Port of `pi-core/ai/src/auth/oauth`: OAuth flows and shared helpers.
 
+pub mod anthropic;
 pub mod device_code;
 pub mod kimi_coding;
 pub mod oauth_page;

@@ -84,7 +84,7 @@ upstream package).
 | `src/auth/context.ts` | `src/ai/auth/context.rs` | done |
 | `src/auth/credential-store.ts` | `src/ai/auth/credential_store.rs` | done |
 | `src/auth/helpers.ts` | `src/ai/auth/helpers.rs` | done |
-| `src/auth/oauth/anthropic.ts` | | pending (with providers, M3) |
+| `src/auth/oauth/anthropic.ts` | `src/ai/auth/oauth/anthropic.rs` | done (loopback callback over tokio TcpListener; client id inlined decoded) |
 | `src/auth/oauth/device-code.ts` | `src/ai/auth/oauth/device_code.rs` | done (tokio time drives the fake-timer tests deterministically) |
 | `src/auth/oauth/github-copilot.ts` | | pending |
 | `src/auth/oauth/kimi-coding.ts` | `src/ai/auth/oauth/kimi_coding.rs` | done (injectable transport/clock/env; tokio timeout reproduces the 30s request signal) |
@@ -239,7 +239,7 @@ upstream package).
 | `test/anthropic-empty-thinking-signature-compat.test.ts` | | pending |
 | `test/anthropic-force-adaptive-thinking.test.ts` | | pending |
 | `test/anthropic-long-cache-retention-e2e.test.ts` | | pending |
-| `test/anthropic-oauth.test.ts` | | pending |
+| `test/anthropic-oauth.test.ts` | `tests/ai_oauth_anthropic.rs` | done |
 | `test/anthropic-opus-4-8-smoke.test.ts` | | pending |
 | `test/anthropic-sse-parsing.test.ts` | | pending |
 | `test/anthropic-temperature-compat.test.ts` | | pending |
