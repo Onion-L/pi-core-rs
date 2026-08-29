@@ -78,7 +78,7 @@ upstream package).
 | `src/api/openrouter-images.lazy.ts` | | pending |
 | `src/api/openrouter-images.ts` | | pending |
 | `src/api/pi-messages.lazy.ts` | | pending |
-| `src/api/pi-messages.ts` | | pending |
+| `src/api/pi-messages.ts` | `src/ai/api/pi_messages.rs` | done |
 | `src/api/simple-options.ts` | `src/ai/api/simple-options.rs` | done |
 | `src/api/transform-messages.ts` | `src/ai/api/transform-messages.rs` | done |
 | `src/auth/context.ts` | `src/ai/auth/context.rs` | done |

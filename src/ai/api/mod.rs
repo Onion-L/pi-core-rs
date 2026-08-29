@@ -13,5 +13,6 @@ pub mod openai_codex_responses;
 pub mod openai_completions;
 pub mod openai_responses;
 pub mod openai_responses_shared;
+pub mod pi_messages;
 pub mod simple_options;
 pub mod transform_messages;
