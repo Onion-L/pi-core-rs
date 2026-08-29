@@ -61,7 +61,7 @@ upstream package).
 | `src/api/github-copilot-headers.ts` | `src/ai/api/github-copilot-headers.rs` | done |
 | `src/api/google-generative-ai.lazy.ts` | | pending |
 | `src/api/google-generative-ai.ts` | | pending |
-| `src/api/google-shared.ts` | | pending |
+| `src/api/google-shared.ts` | `src/ai/api/google_shared.rs` | done |
 | `src/api/google-vertex.lazy.ts` | | pending |
 | `src/api/google-vertex.ts` | | pending |
 | `src/api/lazy.ts` | | pending |
