@@ -47,7 +47,7 @@ fn azure_tool_call_providers() -> BTreeSet<String> {
 const OPENAI_RESPONSES_MIN_OUTPUT_TOKENS: u64 = 16;
 
 /// Port of `parseDeploymentNameMap`.
-fn parse_deployment_name_map(value: Option<&str>) -> BTreeMap<String, String> {
+pub fn parse_deployment_name_map(value: Option<&str>) -> BTreeMap<String, String> {
     let mut map = BTreeMap::new();
     let Some(value) = value else {
         return map;
@@ -57,7 +57,8 @@ fn parse_deployment_name_map(value: Option<&str>) -> BTreeMap<String, String> {
         if trimmed.is_empty() {
             continue;
         }
-        let mut parts = trimmed.splitn(2, '=');
+        // `split("=", 2)` keeps at most two segments and discards the rest.
+        let mut parts = trimmed.split('=');
         let (Some(model_id), Some(deployment_name)) = (parts.next(), parts.next()) else {
             continue;
         };
@@ -73,8 +74,15 @@ fn parse_deployment_name_map(value: Option<&str>) -> BTreeMap<String, String> {
 }
 
 /// Port of `resolveDeploymentName`.
-fn resolve_deployment_name(model: &Model, options: Option<&AzureOpenAIResponsesOptions>) -> String {
-    if let Some(name) = options.and_then(|options| options.azure_deployment_name.as_ref()) {
+pub fn resolve_deployment_name(
+    model: &Model,
+    options: Option<&AzureOpenAIResponsesOptions>,
+) -> String {
+    // TS checks truthiness, so an empty-string override falls through.
+    if let Some(name) = options
+        .and_then(|options| options.azure_deployment_name.as_ref())
+        .filter(|name| !name.is_empty())
+    {
         return name.clone();
     }
     let env = options.and_then(|options| options.base.base.env.as_ref());
@@ -83,7 +91,9 @@ fn resolve_deployment_name(model: &Model, options: Option<&AzureOpenAIResponsesO
         .or_else(|| get_provider_env_value("AZURE_OPENAI_DEPLOYMENT_NAME_MAP", None));
     let mapped = parse_deployment_name_map(map_value.as_deref())
         .get(&model.id)
-        .cloned();
+        .cloned()
+        // TS: `mappedDeployment || model.id` treats an empty name as unset.
+        .filter(|name| !name.is_empty());
     mapped.unwrap_or_else(|| model.id.clone())
 }
 
@@ -138,8 +148,11 @@ fn resolve_azure_config(
     options: Option<&AzureOpenAIResponsesOptions>,
 ) -> Result<(String, String), String> {
     let env = options.and_then(|options| options.base.base.env.as_ref());
+    // TS resolves these with `||`, so empty-string options fall through to the
+    // next source exactly like an unset option.
     let api_version = options
         .and_then(|options| options.azure_api_version.clone())
+        .filter(|version| !version.is_empty())
         .or_else(|| get_provider_env_value("AZURE_OPENAI_API_VERSION", env))
         .unwrap_or_else(|| DEFAULT_AZURE_API_VERSION.to_string());
 
@@ -152,6 +165,7 @@ fn resolve_azure_config(
         });
     let resource_name = options
         .and_then(|options| options.azure_resource_name.clone())
+        .filter(|name| !name.is_empty())
         .or_else(|| get_provider_env_value("AZURE_OPENAI_RESOURCE_NAME", env));
 
     let resolved = base_url
@@ -576,6 +590,12 @@ pub fn stream_simple(
         clamp_thinking_level(model, crate::ai::types::ModelThinkingLevel::from(reasoning))
     });
     let reasoning_effort = clamped_reasoning.and_then(|level| level.as_thinking_level());
+    // TS: `toolChoice: options?.toolChoice` is carried into the provider
+    // options; the neutral choice value is forwarded verbatim.
+    let tool_choice = options
+        .tool_choice
+        .as_ref()
+        .and_then(|choice| serde_json::to_value(choice).ok());
 
     stream(
         model,
@@ -583,6 +603,7 @@ pub fn stream_simple(
         Some(&AzureOpenAIResponsesOptions {
             base,
             reasoning_effort,
+            tool_choice,
             ..Default::default()
         }),
     )
