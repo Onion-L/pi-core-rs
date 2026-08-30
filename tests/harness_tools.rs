@@ -6,7 +6,8 @@
 
 mod common;
 
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use serde_json::json;
 
@@ -735,4 +736,546 @@ async fn bash_ignores_output_callbacks_after_execution_settles() {
     let output = text_output(&result);
     assert!(output.contains("before"), "{output}");
     assert!(!output.contains("late"), "{output}");
+}
+
+/// A wrapper that parks the first observed `write_file` payload until the
+/// test releases it (the TS `BlockingWriteExecutionEnv` /
+/// `BlockingEditExecutionEnv` subclasses): `first_content` parks, any later
+/// write sets `second_started`.
+struct BlockingWriteEnv {
+    inner: NodeExecutionEnv,
+    first_content: String,
+    first_started: tokio::sync::watch::Sender<bool>,
+    release: Arc<tokio::sync::Semaphore>,
+    second_content: String,
+    second_started: AtomicBool,
+    writes: Mutex<Vec<String>>,
+}
+
+impl FileSystem for BlockingWriteEnv {
+    fn cwd(&self) -> String {
+        self.inner.cwd()
+    }
+    fn absolute_path<'a>(
+        &'a self,
+        path: &'a str,
+        signal: Option<CancellationToken>,
+    ) -> futures::future::BoxFuture<'a, Result<String, pi_core::agent::harness::types::FileError>>
+    {
+        self.inner.absolute_path(path, signal)
+    }
+    fn join_path<'a>(
+        &'a self,
+        parts: &'a [String],
+        signal: Option<CancellationToken>,
+    ) -> futures::future::BoxFuture<'a, Result<String, pi_core::agent::harness::types::FileError>>
+    {
+        self.inner.join_path(parts, signal)
+    }
+    fn read_text_file<'a>(
+        &'a self,
+        path: &'a str,
+        signal: Option<CancellationToken>,
+    ) -> futures::future::BoxFuture<'a, Result<String, pi_core::agent::harness::types::FileError>>
+    {
+        self.inner.read_text_file(path, signal)
+    }
+    fn read_text_lines<'a>(
+        &'a self,
+        path: &'a str,
+        options: pi_core::agent::harness::types::ReadTextLinesOptions,
+        signal: Option<CancellationToken>,
+    ) -> futures::future::BoxFuture<
+        'a,
+        Result<Vec<String>, pi_core::agent::harness::types::FileError>,
+    > {
+        self.inner.read_text_lines(path, options, signal)
+    }
+    fn read_binary_file<'a>(
+        &'a self,
+        path: &'a str,
+        signal: Option<CancellationToken>,
+    ) -> futures::future::BoxFuture<'a, Result<Vec<u8>, pi_core::agent::harness::types::FileError>>
+    {
+        self.inner.read_binary_file(path, signal)
+    }
+    fn write_file<'a>(
+        &'a self,
+        path: &'a str,
+        content: &'a WriteContent,
+        signal: Option<CancellationToken>,
+    ) -> futures::future::BoxFuture<'a, Result<(), pi_core::agent::harness::types::FileError>> {
+        let is_first = match content {
+            WriteContent::Text(text) => text == &self.first_content,
+            _ => false,
+        };
+        let inner = &self.inner;
+        let release = Arc::clone(&self.release);
+        Box::pin(async move {
+            if is_first {
+                let _ = self.first_started.send(true);
+                let _ = release.acquire().await;
+            } else if let WriteContent::Text(text) = content
+                && text == &self.second_content
+            {
+                self.second_started.store(true, Ordering::SeqCst);
+            }
+            if let WriteContent::Text(text) = content {
+                self.writes.lock().unwrap().push(text.clone());
+            }
+            // The park sits inside the real write (past the pre-checks), and
+            // Node's fs.writeFile ignores its signal option, so the parked
+            // write still lands after release even when the signal aborted.
+            let _ = signal;
+            inner.write_file(path, content, None).await
+        })
+    }
+    fn append_file<'a>(
+        &'a self,
+        path: &'a str,
+        content: &'a WriteContent,
+        signal: Option<CancellationToken>,
+    ) -> futures::future::BoxFuture<'a, Result<(), pi_core::agent::harness::types::FileError>> {
+        self.inner.append_file(path, content, signal)
+    }
+    fn rename_file<'a>(
+        &'a self,
+        source: &'a str,
+        destination: &'a str,
+        signal: Option<CancellationToken>,
+    ) -> futures::future::BoxFuture<'a, Result<(), pi_core::agent::harness::types::FileError>> {
+        self.inner.rename_file(source, destination, signal)
+    }
+    fn file_info<'a>(
+        &'a self,
+        path: &'a str,
+        signal: Option<CancellationToken>,
+    ) -> futures::future::BoxFuture<
+        'a,
+        Result<pi_core::agent::harness::types::FileInfo, pi_core::agent::harness::types::FileError>,
+    > {
+        self.inner.file_info(path, signal)
+    }
+    fn list_dir<'a>(
+        &'a self,
+        path: &'a str,
+        signal: Option<CancellationToken>,
+    ) -> futures::future::BoxFuture<
+        'a,
+        Result<
+            Vec<pi_core::agent::harness::types::FileInfo>,
+            pi_core::agent::harness::types::FileError,
+        >,
+    > {
+        self.inner.list_dir(path, signal)
+    }
+    fn canonical_path<'a>(
+        &'a self,
+        path: &'a str,
+        signal: Option<CancellationToken>,
+    ) -> futures::future::BoxFuture<'a, Result<String, pi_core::agent::harness::types::FileError>>
+    {
+        self.inner.canonical_path(path, signal)
+    }
+    fn exists<'a>(
+        &'a self,
+        path: &'a str,
+        signal: Option<CancellationToken>,
+    ) -> futures::future::BoxFuture<'a, Result<bool, pi_core::agent::harness::types::FileError>>
+    {
+        self.inner.exists(path, signal)
+    }
+    fn create_dir<'a>(
+        &'a self,
+        path: &'a str,
+        options: pi_core::agent::harness::types::CreateDirOptions,
+        signal: Option<CancellationToken>,
+    ) -> futures::future::BoxFuture<'a, Result<(), pi_core::agent::harness::types::FileError>> {
+        self.inner.create_dir(path, options, signal)
+    }
+    fn remove<'a>(
+        &'a self,
+        path: &'a str,
+        options: pi_core::agent::harness::types::RemoveOptions,
+        signal: Option<CancellationToken>,
+    ) -> futures::future::BoxFuture<'a, Result<(), pi_core::agent::harness::types::FileError>> {
+        self.inner.remove(path, options, signal)
+    }
+    fn create_temp_dir<'a>(
+        &'a self,
+        prefix: &'a str,
+        signal: Option<CancellationToken>,
+    ) -> futures::future::BoxFuture<'a, Result<String, pi_core::agent::harness::types::FileError>>
+    {
+        self.inner.create_temp_dir(prefix, signal)
+    }
+    fn create_temp_file<'a>(
+        &'a self,
+        options: &'a pi_core::agent::harness::types::CreateTempFileOptions,
+        signal: Option<CancellationToken>,
+    ) -> futures::future::BoxFuture<'a, Result<String, pi_core::agent::harness::types::FileError>>
+    {
+        self.inner.create_temp_file(options, signal)
+    }
+    fn cleanup(&self) -> futures::future::BoxFuture<'static, ()> {
+        FileSystem::cleanup(&self.inner)
+    }
+}
+
+impl Shell for BlockingWriteEnv {
+    fn exec<'a>(
+        &'a self,
+        command: &'a str,
+        options: Option<&'a pi_core::agent::harness::types::ShellExecOptions>,
+    ) -> futures::future::BoxFuture<
+        'a,
+        Result<ShellExecResult, pi_core::agent::harness::types::ExecutionError>,
+    > {
+        self.inner.exec(command, options)
+    }
+    fn cleanup(&self) -> futures::future::BoxFuture<'static, ()> {
+        Shell::cleanup(&self.inner)
+    }
+}
+
+async fn wait_first_started(env: &BlockingWriteEnv) {
+    let mut rx = env.first_started.subscribe();
+    if *rx.borrow_and_update() {
+        return;
+    }
+    rx.changed()
+        .await
+        .expect("first write starts before the wait is abandoned");
+}
+
+fn blocking_context(env: Arc<BlockingWriteEnv>) -> AgentToolContext {
+    ExecutionToolContext { env }.into_tool_context()
+}
+
+async fn run_with_signal(
+    tool: &pi_core::agent::harness::types::AgentHarnessTool,
+    id: &str,
+    params: serde_json::Value,
+    signal: Option<&CancellationToken>,
+    context: &AgentToolContext,
+) -> Result<AgentToolResult, String> {
+    ((tool.execute)(id, &params, signal, None, context)).await
+}
+
+/// Port of "delegates image conversion and resizing to an injected
+/// processor".
+#[tokio::test]
+async fn read_delegates_image_conversion_and_resizing_to_an_injected_processor() {
+    let root = common::create_temp_dir();
+    let context = context_for(&root);
+    // createTinyBmp: a 58-byte 1x1 24-bit BMP.
+    let mut bmp = vec![0u8; 58];
+    bmp[0] = 0x42;
+    bmp[1] = 0x4d;
+    bmp[2..6].copy_from_slice(&58u32.to_le_bytes());
+    bmp[10..14].copy_from_slice(&54u32.to_le_bytes());
+    bmp[14..18].copy_from_slice(&40u32.to_le_bytes());
+    bmp[18..22].copy_from_slice(&1i32.to_le_bytes());
+    bmp[22..26].copy_from_slice(&1i32.to_le_bytes());
+    bmp[26..28].copy_from_slice(&1u16.to_le_bytes());
+    bmp[28..30].copy_from_slice(&24u16.to_le_bytes());
+    bmp[34..38].copy_from_slice(&4u32.to_le_bytes());
+    env_of(&context)
+        .write_file("image.bmp", &WriteContent::Bytes(bmp.clone()), None)
+        .await
+        .expect("write bmp");
+
+    type Seen = (Vec<u8>, String, bool);
+    let received: Arc<Mutex<Option<Seen>>> = Arc::new(Mutex::new(None));
+    let seen = Arc::clone(&received);
+    let tool = create_read_tool(ReadToolOptions {
+        auto_resize_images: Some(false),
+        image_processor: Some(Arc::new(move |bytes, mime_type, auto_resize| {
+            let seen = Arc::clone(&seen);
+            let bytes = bytes.to_vec();
+            let mime_type = mime_type.to_string();
+            Box::pin(async move {
+                *seen.lock().unwrap() = Some((bytes, mime_type, auto_resize));
+                pi_core::agent::harness::tools::read::ReadImageProcessorResult::Ok {
+                    data: "converted".to_string(),
+                    mime_type: "image/png".to_string(),
+                    hints: vec!["[Image converted from image/bmp to image/png.]".to_string()],
+                }
+            })
+        })),
+    });
+
+    let result = run(&tool, json!({ "path": "image.bmp" }), &context)
+        .await
+        .unwrap();
+
+    let (bytes, mime_type, auto_resize) =
+        received.lock().unwrap().clone().expect("processor called");
+    assert_eq!(mime_type, "image/bmp");
+    assert!(!auto_resize);
+    assert_eq!(bytes, bmp);
+    assert!(
+        text_output(&result).contains("[Image converted from image/bmp to image/png.]"),
+        "missing hint: {}",
+        text_output(&result)
+    );
+    assert!(result.content.iter().any(|block| match block {
+        BlockContent::Image(image) => {
+            image.data == "converted" && image.mime_type == "image/png"
+        }
+        _ => false,
+    }));
+}
+
+/// Port of "keeps the mutation queue locked until an aborted write settles".
+#[tokio::test]
+async fn keeps_the_mutation_queue_locked_until_an_aborted_write_settles() {
+    let root = common::create_temp_dir();
+    let env = Arc::new(BlockingWriteEnv {
+        inner: NodeExecutionEnv::new(NodeExecutionEnvOptions {
+            cwd: root.to_string(),
+            ..Default::default()
+        }),
+        first_content: "first\n".to_string(),
+        first_started: tokio::sync::watch::Sender::new(false),
+        release: Arc::new(tokio::sync::Semaphore::new(0)),
+        second_content: "second\n".to_string(),
+        second_started: AtomicBool::new(false),
+        writes: Mutex::new(Vec::new()),
+    });
+    let context = blocking_context(Arc::clone(&env));
+    let tool = create_write_tool();
+    let signal = CancellationToken::new();
+
+    let first = {
+        let tool = tool.clone();
+        let context = context.clone();
+        let signal = signal.clone();
+        tokio::spawn(async move {
+            run_with_signal(
+                &tool,
+                "write-first",
+                json!({ "path": "file.txt", "content": "first\n" }),
+                Some(&signal),
+                &context,
+            )
+            .await
+        })
+    };
+    wait_first_started(&env).await;
+    signal.cancel();
+    let second = {
+        let tool = tool.clone();
+        let context = context.clone();
+        tokio::spawn(async move {
+            run_with_signal(
+                &tool,
+                "write-second",
+                json!({ "path": "file.txt", "content": "second\n" }),
+                None,
+                &context,
+            )
+            .await
+        })
+    };
+
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    assert!(
+        !env.second_started.load(Ordering::SeqCst),
+        "the second write must wait for the aborted first write to settle"
+    );
+    env.release.add_permits(1);
+
+    let first = first
+        .await
+        .expect("first task joins")
+        .expect_err("the aborted write rejects");
+    assert!(
+        first.contains("aborted") || first.contains("Operation aborted"),
+        "unexpected abort error: {first}"
+    );
+    let second = second.await.expect("second task").unwrap();
+    let _ = second;
+    let content = env_of(&context)
+        .read_text_file("file.txt", None)
+        .await
+        .expect("read file");
+    assert_eq!(content, "second\n");
+}
+
+/// Port of "keeps the mutation queue locked until an aborted edit write
+/// settles".
+#[tokio::test]
+async fn keeps_the_mutation_queue_locked_until_an_aborted_edit_write_settles() {
+    let root = common::create_temp_dir();
+    let env = Arc::new(BlockingWriteEnv {
+        inner: NodeExecutionEnv::new(NodeExecutionEnvOptions {
+            cwd: root.to_string(),
+            ..Default::default()
+        }),
+        first_content: "ALPHA\nbeta\n".to_string(),
+        first_started: tokio::sync::watch::Sender::new(false),
+        release: Arc::new(tokio::sync::Semaphore::new(0)),
+        second_content: "ALPHA\nBETA\n".to_string(),
+        second_started: AtomicBool::new(false),
+        writes: Mutex::new(Vec::new()),
+    });
+    let context = blocking_context(Arc::clone(&env));
+    write_file(env_of(&context), "file.txt", "alpha\nbeta\n").await;
+    let tool = create_edit_tool();
+    let signal = CancellationToken::new();
+
+    let first = {
+        let tool = tool.clone();
+        let context = context.clone();
+        let signal = signal.clone();
+        tokio::spawn(async move {
+            run_with_signal(
+                &tool,
+                "edit-first",
+                json!({ "path": "file.txt", "edits": [{"oldText": "alpha", "newText": "ALPHA"}] }),
+                Some(&signal),
+                &context,
+            )
+            .await
+        })
+    };
+    wait_first_started(&env).await;
+    signal.cancel();
+    let second = {
+        let tool = tool.clone();
+        let context = context.clone();
+        tokio::spawn(async move {
+            run_with_signal(
+                &tool,
+                "edit-second",
+                json!({ "path": "file.txt", "edits": [{"oldText": "beta", "newText": "BETA"}] }),
+                None,
+                &context,
+            )
+            .await
+        })
+    };
+
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    assert!(
+        !env.second_started.load(Ordering::SeqCst),
+        "the second edit must wait for the aborted first edit to settle; writes so far: {:?}",
+        env.writes.lock().unwrap().clone()
+    );
+    env.release.add_permits(1);
+
+    let first = first
+        .await
+        .expect("first task joins")
+        .expect_err("the aborted edit rejects");
+    assert!(first.contains("aborted"), "unexpected abort error: {first}");
+    let second = second.await.expect("second task").unwrap();
+    let _ = second;
+    let content = env_of(&context)
+        .read_text_file("file.txt", None)
+        .await
+        .expect("read file");
+    assert_eq!(content, "ALPHA\nBETA\n");
+}
+
+/// Port of "edits regular files through symlinks".
+#[tokio::test]
+async fn edits_regular_files_through_symlinks() {
+    let root = common::create_temp_dir();
+    let context = context_for(&root);
+    write_file(env_of(&context), "target.txt", "before\n").await;
+    #[cfg(unix)]
+    std::os::unix::fs::symlink("target.txt", format!("{root}/link.txt")).expect("symlink");
+
+    let result = run(
+        &create_edit_tool(),
+        json!({ "path": "link.txt", "edits": [{"oldText": "before", "newText": "after"}] }),
+        &context,
+    )
+    .await;
+
+    // The TS case edits through the symlink; on unix the symlink resolves.
+    #[cfg(unix)]
+    {
+        let result = result.expect("edit through symlink");
+        let _ = result;
+        let content = env_of(&context)
+            .read_text_file("target.txt", None)
+            .await
+            .expect("read target");
+        assert_eq!(content, "after\n");
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = result;
+    }
+}
+
+/// Port of "coalesces updates and persists truncated full output".
+#[tokio::test]
+async fn bash_coalesces_updates_and_persists_truncated_full_output() {
+    let root = common::create_temp_dir();
+    let context = context_for(&root);
+    let updates: Arc<Mutex<Vec<AgentToolResult>>> = Arc::new(Mutex::new(Vec::new()));
+    let callback: pi_core::agent::types::AgentToolUpdateCallback = {
+        let updates = Arc::clone(&updates);
+        Arc::new(move |update: AgentToolResult| {
+            updates.lock().unwrap().push(update);
+        })
+    };
+
+    let result = ((create_bash_tool(BashToolOptions::default()).execute)(
+        "bash-5",
+        &json!({ "command": "i=1; while [ $i -le 3000 ]; do echo line-$i; i=$((i + 1)); done" }),
+        None,
+        Some(&callback),
+        &context,
+    ))
+    .await
+    .expect("bash run");
+
+    let updates = updates.lock().unwrap().clone();
+    assert!(
+        updates.len() < 25,
+        "expected coalescing, got {} updates",
+        updates.len()
+    );
+    let details = result.details.clone();
+    let truncation = details
+        .pointer("/truncation")
+        .cloned()
+        .expect("truncation details");
+    assert_eq!(truncation.pointer("/truncated"), Some(&json!(true)));
+    assert_eq!(truncation.pointer("/truncatedBy"), Some(&json!("lines")));
+    assert_eq!(truncation.pointer("/totalLines"), Some(&json!(3000)));
+    assert_eq!(truncation.pointer("/outputLines"), Some(&json!(2000)));
+    assert!(text_output(&result).contains("line-3000"));
+    let full_output_path = details
+        .pointer("/fullOutputPath")
+        .and_then(|value| value.as_str())
+        .expect("fullOutputPath")
+        .to_string();
+    let last = updates.last().expect("final update");
+    assert!(text_output(last).contains("line-3000"));
+    assert_eq!(
+        last.details.pointer("/truncation/totalLines").cloned(),
+        Some(json!(3000))
+    );
+    assert_eq!(
+        last.details.pointer("/fullOutputPath").cloned(),
+        Some(json!(full_output_path))
+    );
+    let full_output = env_of(&context)
+        .read_text_file(
+            full_output_path
+                .strip_prefix(&format!("{root}/"))
+                .unwrap_or(full_output_path.as_str()),
+            None,
+        )
+        .await
+        .or_else(|_| std::fs::read_to_string(&full_output_path).map_err(|error| error.to_string()))
+        .expect("read full output");
+    assert!(full_output.contains("line-1\nline-2"));
+    assert!(full_output.contains("line-2999\nline-3000"));
 }
