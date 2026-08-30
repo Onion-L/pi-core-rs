@@ -108,7 +108,7 @@ upstream package).
 | `src/images-api-registry.ts` | `src/ai/images.rs` | done (static dispatch; lazy module loading is a compile-time no-op in Rust) |
 | `src/images-models.ts` | `src/ai/images_models.rs` | done |
 | `src/images.ts` | `src/ai/images.rs` | done |
-| `src/index.ts` | | pending |
+| `src/index.ts` | `src/agent/mod.rs` | done |
 | `src/legacy-api-aliases.ts` | `src/ai/compat.rs` | done (deprecated per-api stream aliases) |
 | `src/model-catalog.ts` | `src/ai/model_catalog.rs` | done (identity helper; TS generics are compile-time only) |
 | `src/models-store.ts` | `src/ai/models_store.rs` | done (exercised through the models-runtime refresh tests) |
@@ -411,52 +411,52 @@ upstream package).
 |---|---|---|
 | `src/agent-loop.ts` | `src/agent/agent_loop.rs` | done |
 | `src/agent.ts` | `src/agent/agent.rs` | done |
-| `src/harness/agent-harness.ts` | | pending |
-| `src/harness/compaction/branch-summarization.ts` | | pending |
-| `src/harness/compaction/compaction.ts` | | pending |
-| `src/harness/compaction/utils.ts` | | pending |
-| `src/harness/env/nodejs.ts` | | pending |
-| `src/harness/events.ts` | | pending |
-| `src/harness/messages.ts` | | pending |
-| `src/harness/prompt-templates.ts` | | pending |
-| `src/harness/reducer.ts` | | pending |
-| `src/harness/result.ts` | | pending |
-| `src/harness/session/context.ts` | | pending |
-| `src/harness/session/index.ts` | | pending |
-| `src/harness/session/jsonl.ts` | | pending |
-| `src/harness/session/jsonl/codec.ts` | | pending |
-| `src/harness/session/jsonl/errors.ts` | | pending |
-| `src/harness/session/jsonl/repo.ts` | | pending |
-| `src/harness/session/jsonl/storage.ts` | | pending |
-| `src/harness/session/jsonl/types.ts` | | pending |
-| `src/harness/session/memory.ts` | | pending |
-| `src/harness/session/session.ts` | | pending |
-| `src/harness/session/state.ts` | | pending |
-| `src/harness/session/testing/conformance.ts` | | pending |
-| `src/harness/session/testing/index.ts` | | pending |
-| `src/harness/session/testing/types.ts` | | pending |
-| `src/harness/session/types.ts` | | pending |
-| `src/harness/skills.ts` | | pending |
-| `src/harness/system-prompt.ts` | | pending |
-| `src/harness/telemetry.ts` | | pending |
-| `src/harness/tools/bash.ts` | | pending |
-| `src/harness/tools/edit-diff.ts` | | pending |
-| `src/harness/tools/edit.ts` | | pending |
-| `src/harness/tools/file-mutation-queue.ts` | | pending |
-| `src/harness/tools/image.ts` | | pending |
-| `src/harness/tools/index.ts` | | pending |
-| `src/harness/tools/path-utils.ts` | | pending |
-| `src/harness/tools/read.ts` | | pending |
-| `src/harness/tools/tool-context.ts` | | pending |
-| `src/harness/tools/write.ts` | | pending |
-| `src/harness/types.ts` | | pending |
-| `src/harness/utils/shell-output.ts` | | pending |
-| `src/harness/utils/truncate.ts` | | pending |
-| `src/index.ts` | | pending |
-| `src/node.ts` | | pending |
+| `src/harness/agent-harness.ts` | `src/agent/harness/agent_harness.rs` | done (the v2 scaffold: configuration surface with defensive copies, record-free create gate, and explicit HarnessNotImplemented/HarnessClosed rejections for the unimplemented operation surface) |
+| `src/harness/compaction/branch-summarization.ts` | `src/agent/harness/compaction/branch_summarization.rs` | done |
+| `src/harness/compaction/compaction.ts` | `src/agent/harness/compaction/compaction.rs` | done |
+| `src/harness/compaction/utils.ts` | `src/agent/harness/compaction/utils.rs` | done |
+| `src/harness/env/nodejs.ts` | `src/agent/harness/env/nodejs.rs` | done (tokio::fs/tokio::process rebuild; Windows shell-discovery branches documented in the module) |
+| `src/harness/events.ts` | `src/agent/harness/events.rs` | done |
+| `src/harness/messages.ts` | `src/agent/harness/messages.rs` | done |
+| `src/harness/prompt-templates.ts` | `src/agent/harness/prompt_templates.rs` | done (serde_yaml replaces the yaml package; parse failures surface identically) |
+| `src/harness/reducer.ts` | `src/agent/harness/reducer.rs` | done |
+| `src/harness/result.ts` | `src/agent/harness/events.rs (module doc)` | exception (std Result replaces the ok/err/isOk/isErr helpers; the TaggedError factory has no Rust counterpart — concrete error structs and match on their codes serve the same purpose) |
+| `src/harness/session/context.ts` | `src/agent/harness/session/context.rs` | done |
+| `src/harness/session/index.ts` | `src/agent/harness/session/mod.rs` | done |
+| `src/harness/session/jsonl.ts` | `src/agent/harness/session/jsonl/mod.rs` | done |
+| `src/harness/session/jsonl/codec.ts` | `src/agent/harness/session/jsonl/codec.rs` | done (byte parity pinned by tests/goldens/session-jsonl/ against scripts/oracle/export-session-jsonl.mts) |
+| `src/harness/session/jsonl/errors.ts` | `src/agent/harness/session/jsonl/errors.rs` | done |
+| `src/harness/session/jsonl/repo.ts` | `src/agent/harness/session/jsonl/repo.rs` | done |
+| `src/harness/session/jsonl/storage.ts` | `src/agent/harness/session/jsonl/storage.rs` | done |
+| `src/harness/session/jsonl/types.ts` | `src/agent/harness/session/jsonl/types.rs` | done (the structural Pick<FileSystem, ...> becomes the full FileSystem trait object) |
+| `src/harness/session/memory.ts` | `src/agent/harness/session/memory.rs` | done |
+| `src/harness/session/session.ts` | `src/agent/harness/session/memory.rs (Session)` | done (assertJsonSerializable is enforced by construction; clock seam mirrors Date.now overrides) |
+| `src/harness/session/state.ts` | `src/agent/harness/session/state.rs` | done |
+| `src/harness/session/testing/conformance.ts` | `src/agent/harness/session/testing/mod.rs` | done (representative case per upstream group; fixture/AsyncDisposable collapses to an enum over the in-memory and JSONL backends) |
+| `src/harness/session/testing/index.ts` | `src/agent/harness/session/testing/mod.rs` | done |
+| `src/harness/session/testing/types.ts` | `src/agent/harness/session/testing/mod.rs` | done |
+| `src/harness/session/types.ts` | `src/agent/harness/session/types.rs` | done |
+| `src/harness/skills.ts` | `src/agent/harness/skills.rs` | done (the ignore npm package is replaced by a small gitignore-style matcher covering the loader pattern shapes) |
+| `src/harness/system-prompt.ts` | `src/agent/harness/system_prompt.rs` | done |
+| `src/harness/telemetry.ts` | `src/agent/harness/telemetry.rs (+ data/telemetry-schemas.json via scripts/oracle/export-agent-telemetry-schemas.mts)` | done (schemas embedded verbatim from the oracle; conditional-type vocabularies remain compile-time-only) |
+| `src/harness/tools/bash.ts` | `src/agent/harness/tools/bash.rs` | done |
+| `src/harness/tools/edit-diff.ts` | `src/agent/harness/tools/edit_diff.rs` | done (npm diff package replaced by an LCS line diff and unified-patch renderer verified against the package output) |
+| `src/harness/tools/edit.ts` | `src/agent/harness/tools/edit.rs` | done |
+| `src/harness/tools/file-mutation-queue.ts` | `src/agent/harness/tools/file_mutation_queue.rs` | done (WeakMap keying becomes an Arc-address-keyed registry) |
+| `src/harness/tools/image.ts` | `src/agent/harness/tools/image.rs` | done |
+| `src/harness/tools/index.ts` | `src/agent/harness/tools/mod.rs` | done |
+| `src/harness/tools/path-utils.ts` | `src/agent/harness/tools/path_utils.rs` | done |
+| `src/harness/tools/read.ts` | `src/agent/harness/tools/read.rs` | done |
+| `src/harness/tools/tool-context.ts` | `src/agent/harness/tools/tool_context.rs` | done |
+| `src/harness/tools/write.ts` | `src/agent/harness/tools/write.rs` | done |
+| `src/harness/types.ts` | `src/agent/harness/types.rs` | done |
+| `src/harness/utils/shell-output.ts` | `src/agent/harness/utils/shell_output.rs` | done (onChunk receives the progress snapshot computed for that chunk) |
+| `src/harness/utils/truncate.ts` | `src/agent/harness/utils/truncate.rs` | done (unpaired-surrogate inputs are unrepresentable in Rust strings; fuzz runs over the valid UTF-8 alphabet) |
+| `src/index.ts` | `src/agent/mod.rs` | done |
+| `src/node.ts` | `src/agent/node.rs` | done |
 | `src/proxy.ts` | `src/agent/proxy.rs` | done (request runs through the crate `HttpFetch` transport, injectable via `ProxyStreamOptions.fetch`, instead of `globalThis.fetch`; cancellation is observed between body chunks) |
-| `src/search/index.ts` | | pending |
-| `src/search/scanning.ts` | | pending |
+| `src/search/index.ts` | `src/agent/search/mod.rs` | done |
+| `src/search/scanning.ts` | `src/agent/search/mod.rs` | done |
 | `src/stream-fn.ts` | `src/agent/stream_fn.rs` | done |
 | `src/types.ts` | `src/agent/types.rs` (+ `src/ai/types.rs` for the shared LLM types) | done |
 
@@ -492,3 +492,28 @@ upstream package).
 | `test/agent.test.ts` | `tests/agent.rs` | done |
 | `test/e2e.test.ts` | `tests/agent_e2e.rs` | done (`test/utils/calculate.ts` ports with a minimal arithmetic evaluator standing in for `new Function` eval — same grammar the suite exercises) |
 | `test/proxy.test.ts` | `tests/agent_proxy.rs` | done (mock injected through `ProxyStreamOptions.fetch` instead of a `vi.stubGlobal` fetch stub) |
+
+### Harness tests
+
+| TypeScript test | Rust test | Status |
+|---|---|---|
+| `test/harness/agent-harness-scaffold.test.ts` | `tests/harness_agent_harness.rs` | done |
+| `test/harness/branch-summarization.test.ts` | `tests/harness_compaction.rs` | done |
+| `test/harness/compaction.test.ts` | `tests/harness_compaction.rs` | done (offline preparation/cut/token suites plus the faux-provider summary paths; representative cases per upstream group) |
+| `test/harness/events.test.ts` | `tests/harness_events.rs` | done |
+| `test/harness/nodejs-env.test.ts` | `tests/harness_nodejs_env.rs` | done (platform-faking WSL test and win32-only skipIf cases are documented exceptions) |
+| `test/harness/prompt-templates.test.ts` | `tests/harness_resources.rs` | done |
+| `test/harness/reducer.test.ts` | `tests/harness_reducer.rs` | done (representative cases per upstream group: corruption taxonomy, reduction shapes, tool batches, deferred handling, overflow guard) |
+| `test/harness/resource-formatting.test.ts` | `tests/harness_resources.rs` | done |
+| `test/harness/session/context.test.ts` | `tests/harness_session.rs` | done |
+| `test/harness/session/jsonl.test.ts` | `tests/harness_session_jsonl.rs` + `tests/harness_session_conformance.rs` | done |
+| `test/harness/session/jsonl-codec.test.ts` | `tests/harness_session_jsonl.rs` | done |
+| `test/harness/session/jsonl-storage.test.ts` | `tests/harness_session_jsonl.rs` | done (storage-level repair and fork cases through the NodeExecutionEnv filesystem) |
+| `test/harness/session/memory.test.ts` | `tests/harness_session.rs` + `tests/harness_session_conformance.rs` | done |
+| `test/harness/session/search.test.ts` | `tests/harness_resources.rs` | done |
+| `test/harness/skills.test.ts` | `tests/harness_resources.rs` | done |
+| `test/harness/system-prompt.test.ts` | `tests/harness_resources.rs` | done |
+| `test/harness/telemetry.test.ts` | `tests/harness_telemetry.rs` | done (the docs-regeneration case checks the same oracle-rendered payload) |
+| `test/harness/tools.test.ts` | `tests/harness_tools.rs` | done (read/write/edit/bash suites incl. image detection and stub-env late-output; the mutation-queue blocking subclass cases run through wrapper envs) |
+| `test/harness/truncate.test.ts` | `tests/harness_truncate.rs` | done |
+| `test/harness/session-test-utils.ts` | `tests/common/mod.rs` | done (afterEach cleanup becomes RAII) |
