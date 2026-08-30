@@ -285,7 +285,10 @@ async fn preserves_source_info_for_sourced_skills() {
     assert_eq!(skills[0].0.name, "example");
     assert_eq!(skills[0].0.description, "Example skill");
     assert_eq!(skills[0].0.content, "Use this skill.");
-    assert_eq!(skills[0].0.file_path, format!("{root}/user/example/SKILL.md"));
+    assert_eq!(
+        skills[0].0.file_path,
+        format!("{root}/user/example/SKILL.md")
+    );
     assert_eq!(skills[0].0.disable_model_invocation, Some(false));
     assert_eq!(skills[0].1, json!({ "type": "user" }));
 }
@@ -589,7 +592,12 @@ async fn preserves_source_info_for_sourced_prompt_templates() {
     )
     .await
     .unwrap();
-    write(&env, "prompts/example.md", "---\ndescription: Example\n---\nExample body").await;
+    write(
+        &env,
+        "prompts/example.md",
+        "---\ndescription: Example\n---\nExample body",
+    )
+    .await;
 
     let (templates, diagnostics) =
         pi_core::agent::harness::prompt_templates::load_sourced_prompt_templates(
@@ -618,7 +626,12 @@ async fn preserves_source_info_for_sourced_prompt_templates() {
 async fn attaches_source_info_to_prompt_template_diagnostics() {
     let root = common::create_temp_dir();
     let env = env_for(&root);
-    write(&env, "broken.md", "---\ndescription: [unterminated\n---\nBody").await;
+    write(
+        &env,
+        "broken.md",
+        "---\ndescription: [unterminated\n---\nBody",
+    )
+    .await;
 
     let (templates, diagnostics) =
         pi_core::agent::harness::prompt_templates::load_sourced_prompt_templates(
@@ -642,17 +655,20 @@ async fn attaches_source_info_to_prompt_template_diagnostics() {
 fn search_message(text: &str) -> pi_core::agent::types::AgentMessage {
     pi_core::agent::types::AgentMessage::User(pi_core::ai::types::UserMessage {
         role: pi_core::ai::types::RoleUser,
-        content: pi_core::ai::types::UserContent::Blocks(vec![pi_core::ai::types::BlockContent::Text(
-            pi_core::ai::types::TextContent {
+        content: pi_core::ai::types::UserContent::Blocks(vec![
+            pi_core::ai::types::BlockContent::Text(pi_core::ai::types::TextContent {
                 text: text.to_string(),
                 ..Default::default()
-            },
-        )]),
+            }),
+        ]),
         timestamp: 1,
     })
 }
 
-async fn memory_session(id: &str, created_at: i64) -> pi_core::agent::harness::session::memory::Session {
+fn deterministic_memory_session(
+    id: &str,
+    created_at: i64,
+) -> pi_core::agent::harness::session::memory::Session {
     let storage = pi_core::agent::harness::session::memory::InMemorySessionStorage::new(
         pi_core::agent::harness::session::types::SessionMetadata {
             id: id.to_string(),
@@ -676,52 +692,60 @@ async fn collect_hits(
     search: &std::sync::Arc<dyn pi_core::agent::search::SessionSearch>,
     text: &str,
     options: Option<pi_core::agent::search::SessionSearchOptions>,
-) -> Vec<pi_core::agent::search::SessionSearchHit> {
-    let mut hits = Vec::new();
-    let mut stream = search.search(text, options);
-    while let Some(hit) = futures::StreamExt::next(&mut stream).await {
-        hits.push(hit);
-    }
-    hits
+) -> Vec<pi_core::agent::search::ScanningSessionSearchHit> {
+    search.search(text, options).await.expect("search")
+}
+
+fn scanning_source(
+    storages: Vec<Arc<dyn pi_core::agent::harness::session::types::SessionStorage>>,
+) -> pi_core::agent::search::ScanningReadableSource {
+    let readables: Vec<Arc<dyn pi_core::agent::search::ScanningReadable>> = storages
+        .into_iter()
+        .map(|storage| {
+            Arc::new(pi_core::agent::search::StorageReadable(storage))
+                as Arc<dyn pi_core::agent::search::ScanningReadable>
+        })
+        .collect();
+    Arc::new(move |_options| Box::pin(futures::future::ready(readables.clone())))
 }
 
 /// Port of "includes labels in memory scanning projections".
 #[tokio::test]
 async fn includes_labels_in_memory_scanning_projections() {
-    let session = memory_session("session", 1).await;
+    let session = deterministic_memory_session("session", 1);
     let entry_id = session
         .append_message(search_message("plain body"))
         .await
         .expect("append");
     session
-        .set_label(&entry_id, "important label")
+        .set_label(&entry_id, Some("important label".to_string()))
         .await
         .expect("set label");
     let search = pi_core::agent::search::create_scanning_session_search(
-        pi_core::agent::search::ScanningReadableSource::Memory(vec![session]),
+        scanning_source(vec![Arc::clone(session.storage())]),
         pi_core::agent::search::ScanningSessionSearchOptions::default(),
     );
 
     let hits = collect_hits(&search, "important", None).await;
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].session_id, "session");
-    assert_eq!(hits[0].entry_id.as_deref(), Some(entry_id.as_str()));
+    assert_eq!(hits[0].entry_id, entry_id);
 }
 
 /// Port of "honors entry type filters and abort signals in scanning search".
 #[tokio::test]
 async fn honors_entry_type_filters_and_abort_signals_in_scanning_search() {
-    let session = memory_session("session", 1).await;
+    let session = deterministic_memory_session("session", 1);
     let message_entry_id = session
         .append_message(search_message("auth message"))
         .await
         .expect("append message");
     session
-        .append_custom_entry("note", json!({ "text": "auth custom" }))
+        .append_custom_entry("note", Some(json!({ "text": "auth custom" })))
         .await
         .expect("append custom");
     let search = pi_core::agent::search::create_scanning_session_search(
-        pi_core::agent::search::ScanningReadableSource::Memory(vec![session]),
+        scanning_source(vec![Arc::clone(session.storage())]),
         pi_core::agent::search::ScanningSessionSearchOptions::default(),
     );
 
@@ -729,7 +753,9 @@ async fn honors_entry_type_filters_and_abort_signals_in_scanning_search() {
         &search,
         "auth",
         Some(pi_core::agent::search::SessionSearchOptions {
-            entry_types: Some(vec![pi_core::agent::harness::session::types::EntryType::Message]),
+            entry_types: Some(vec![
+                pi_core::agent::harness::session::types::EntryType::Message,
+            ]),
             limit: None,
             signal: None,
         }),
@@ -737,29 +763,25 @@ async fn honors_entry_type_filters_and_abort_signals_in_scanning_search() {
     .await;
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].session_id, "session");
-    assert_eq!(hits[0].entry_id.as_deref(), Some(message_entry_id.as_str()));
+    assert_eq!(hits[0].entry_id, message_entry_id);
 
     let signal = tokio_util::sync::CancellationToken::new();
     signal.cancel();
-    let mut stream = search.search(
-        "auth",
-        Some(pi_core::agent::search::SessionSearchOptions {
-            entry_types: None,
-            limit: None,
-            signal: Some(signal),
-        }),
+    let aborted = search
+        .search(
+            "auth",
+            Some(pi_core::agent::search::SessionSearchOptions {
+                entry_types: None,
+                limit: None,
+                signal: Some(signal),
+            }),
+        )
+        .await
+        .expect_err("aborted search");
+    assert!(
+        aborted.contains("aborted") || aborted.contains("Abort"),
+        "expected an abort error, got {aborted}"
     );
-    let aborted = futures::StreamExt::next(&mut stream).await;
-    match aborted {
-        Some(Err(error)) => {
-            let message = error.to_string();
-            assert!(
-                message.contains("aborted") || message.contains("Abort"),
-                "expected an abort error, got {message}"
-            );
-        }
-        other => panic!("expected an aborted search, got {other:?}"),
-    }
 }
 
 /// Port of "scans JSONL sessions from disk through the JSONL scanning
@@ -771,19 +793,20 @@ async fn scans_jsonl_sessions_from_disk_through_the_jsonl_source() {
         cwd: root.to_string(),
         ..Default::default()
     }));
-    let options = pi_core::agent::harness::session::jsonl::repo::JsonlSessionRepoOptions {
+    let options = pi_core::agent::harness::session::jsonl::types::JsonlSessionRepoOptions {
         fs: env.clone(),
         sessions_root: root.to_string(),
     };
-    let repository = pi_core::agent::harness::session::jsonl::repo::JsonlSessionRepo::new(
-        options.clone(),
-    );
+    let repository =
+        Arc::new(pi_core::agent::harness::session::jsonl::repo::JsonlSessionRepo::new(options));
     let session = repository
-        .create(pi_core::agent::harness::session::jsonl::types::JsonlSessionCreateMetadata {
-            id: "jsonl".to_string(),
-            cwd: format!("{root}/workspace"),
-            ..Default::default()
-        })
+        .create(
+            pi_core::agent::harness::session::jsonl::types::JsonlSessionCreateOptions {
+                id: Some("jsonl".to_string()),
+                cwd: format!("{root}/workspace"),
+                ..Default::default()
+            },
+        )
         .await
         .expect("create jsonl session");
     let entry_id = session
@@ -791,15 +814,17 @@ async fn scans_jsonl_sessions_from_disk_through_the_jsonl_source() {
         .await
         .expect("append");
     session
-        .set_label(&entry_id, "disk label")
+        .set_label(&entry_id, Some("disk label".to_string()))
         .await
         .expect("set label");
     let other = repository
-        .create(pi_core::agent::harness::session::jsonl::types::JsonlSessionCreateMetadata {
-            id: "other".to_string(),
-            cwd: format!("{root}/other"),
-            ..Default::default()
-        })
+        .create(
+            pi_core::agent::harness::session::jsonl::types::JsonlSessionCreateOptions {
+                id: Some("other".to_string()),
+                cwd: format!("{root}/other"),
+                ..Default::default()
+            },
+        )
         .await
         .expect("create other session");
     let other_entry_id = other
@@ -807,12 +832,26 @@ async fn scans_jsonl_sessions_from_disk_through_the_jsonl_source() {
         .await
         .expect("append other");
 
-    let source = pi_core::agent::search::ScanningReadableSource::Jsonl(
-        pi_core::agent::search::JsonlScanningSource {
-            options: options.clone(),
-            query: Default::default(),
-        },
-    );
+    let source_repository = Arc::clone(&repository);
+    let source: pi_core::agent::search::ScanningReadableSource = Arc::new(move |_options| {
+        let repository = Arc::clone(&source_repository);
+        Box::pin(async move {
+            let metadata = repository
+                .list(
+                    &pi_core::agent::harness::session::jsonl::types::JsonlSessionListOptions::default(),
+                )
+                .await
+                .expect("list JSONL sessions");
+            let mut readables: Vec<Arc<dyn pi_core::agent::search::ScanningReadable>> = Vec::new();
+            for metadata in metadata {
+                let session = repository.open(metadata).await.expect("open JSONL session");
+                readables.push(Arc::new(pi_core::agent::search::StorageReadable(
+                    Arc::clone(session.storage()),
+                )));
+            }
+            readables
+        })
+    });
     let search = pi_core::agent::search::create_scanning_session_search(
         source,
         pi_core::agent::search::ScanningSessionSearchOptions::default(),
@@ -822,13 +861,13 @@ async fn scans_jsonl_sessions_from_disk_through_the_jsonl_source() {
     assert_eq!(auth_hits.len(), 2);
     let mut seen = Vec::new();
     for hit in &auth_hits {
-        seen.push((hit.session_id.as_str(), hit.entry_id.as_deref()));
+        seen.push((hit.session_id.as_str(), hit.entry_id.as_str()));
     }
-    assert!(seen.contains(&("jsonl", Some(entry_id.as_str()))));
-    assert!(seen.contains(&("other", Some(other_entry_id.as_str()))));
+    assert!(seen.contains(&("jsonl", entry_id.as_str())));
+    assert!(seen.contains(&("other", other_entry_id.as_str())));
 
     let label_hits = collect_hits(&search, "disk", None).await;
     assert_eq!(label_hits.len(), 1);
     assert_eq!(label_hits[0].session_id, "jsonl");
-    assert_eq!(label_hits[0].entry_id.as_deref(), Some(entry_id.as_str()));
+    assert_eq!(label_hits[0].entry_id, entry_id);
 }

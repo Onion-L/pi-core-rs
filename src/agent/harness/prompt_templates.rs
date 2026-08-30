@@ -388,7 +388,7 @@ pub async fn load_sourced_prompt_templates<TSource: Clone>(
     let mut prompt_templates = Vec::new();
     let mut diagnostics = Vec::new();
     for input in inputs {
-        let result = load_prompt_templates(env, &[input.path.clone()]).await;
+        let result = load_prompt_templates(env, std::slice::from_ref(&input.path)).await;
         for prompt_template in result.prompt_templates {
             prompt_templates.push(SourcedPromptTemplate {
                 prompt_template,
