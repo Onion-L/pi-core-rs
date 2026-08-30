@@ -143,7 +143,33 @@ pub async fn resolve_provider_auth(
     let signal = overrides
         .and_then(|overrides| overrides.signal.clone())
         .unwrap_or_default();
+    if signal.is_cancelled() {
+        return Err(ResolveError::Aborted);
+    }
+    // Port of the `raceWithAbortSignal` wrapper: stop waiting for a
+    // non-cooperative resolution when the caller's signal aborts.
+    let operation = resolve_provider_auth_with_signal(
+        provider_id,
+        provider_auth,
+        credentials,
+        auth_context,
+        overrides,
+        &signal,
+    );
+    tokio::select! {
+        () = signal.cancelled() => Err(ResolveError::Aborted),
+        result = operation => result,
+    }
+}
 
+async fn resolve_provider_auth_with_signal(
+    provider_id: &str,
+    provider_auth: &ProviderAuth,
+    credentials: &dyn CredentialStore,
+    auth_context: Arc<dyn AuthContext>,
+    overrides: Option<&AuthResolutionOverrides>,
+    signal: &CancellationToken,
+) -> Result<Option<AuthResult>, ResolveError> {
     let request_auth_context: Arc<dyn AuthContext> =
         match overrides.and_then(|overrides| overrides.env.as_ref()) {
             Some(env) => Arc::new(OverlayEnvAuthContext {
@@ -165,12 +191,12 @@ pub async fn resolve_provider_auth(
             api_key_auth.as_ref(),
             provider_id,
             Some(&credential),
-            &signal,
+            signal,
         )
         .await;
     }
 
-    let stored = read_credential(credentials, provider_id, &signal).await?;
+    let stored = read_credential(credentials, provider_id, signal).await?;
     if let Some(stored) = stored {
         match (
             &stored,
@@ -183,7 +209,7 @@ pub async fn resolve_provider_auth(
                     provider_id,
                     Arc::clone(oauth_auth),
                     oauth_credential.clone(),
-                    &signal,
+                    signal,
                     overrides.and_then(|overrides| overrides.min_oauth_validity_ms),
                 )
                 .await;
@@ -211,7 +237,7 @@ pub async fn resolve_provider_auth(
                     api_key_auth.as_ref(),
                     provider_id,
                     Some(&credential),
-                    &signal,
+                    signal,
                 )
                 .await;
             }
@@ -228,7 +254,7 @@ pub async fn resolve_provider_auth(
                 api_key_auth.as_ref(),
                 provider_id,
                 None,
-                &signal,
+                signal,
             )
             .await
         }

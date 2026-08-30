@@ -337,21 +337,28 @@ impl Models {
     }
 
     /// Port of `getModels`: sync read of last-known models from one provider
-    /// or all providers.
+    /// or all providers. Best-effort: a provider whose `getModels()` throws
+    /// (panics) yields no models.
     pub fn get_models(&self, provider: Option<&str>) -> Vec<Model> {
         let providers = self
             .providers
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let provider_models = |entry: &Arc<dyn Provider>| {
+            // Port of the per-provider try/catch: ill-behaved providers yield
+            // no models instead of failing the whole listing.
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| entry.get_models()))
+                .unwrap_or_default()
+        };
         if let Some(provider) = provider {
             return providers
                 .get(provider)
-                .map(|entry| entry.get_models())
+                .map(provider_models)
                 .unwrap_or_default();
         }
         let mut models = Vec::new();
         for entry in providers.values() {
-            models.extend(entry.get_models());
+            models.extend(provider_models(entry));
         }
         models
     }
@@ -454,14 +461,38 @@ impl Models {
 
             operations.push(async move {
                 let operation = async {
-                    let stored_credential = match credentials.read(&provider_id, None).await {
+                    let stored_credential = match credentials
+                        .read(
+                            &provider_id,
+                            Some(&crate::ai::auth::types::AuthOperationOptions {
+                                signal: Some(signal.clone()),
+                            }),
+                        )
+                        .await
+                    {
                         Ok(credential) => credential,
                         Err(error) => {
-                            return Err(ModelsError::with_cause(
+                            let error = ModelsError::with_cause(
                                 ModelsErrorCode::Auth,
                                 format!("Credential store read failed for {provider_id}"),
                                 &error,
-                            ));
+                            );
+                            // Restore cached provider state before surfacing the
+                            // read failure, mirroring the TypeScript ordering.
+                            run_provider_refresh_phase(
+                                provider_for_phase.as_ref(),
+                                RefreshPhase {
+                                    models: this,
+                                    provider_id: &provider_id,
+                                    generation,
+                                    credential: None,
+                                    allow_network: false,
+                                    force: None,
+                                    signal: &signal,
+                                },
+                            )
+                            .await?;
+                            return Err(error);
                         }
                     };
 
@@ -546,39 +577,63 @@ impl Models {
         provider_id: &str,
         options: Option<&AuthOperationOptions>,
     ) -> Result<Option<crate::ai::auth::types::AuthCheck>, ResolveError> {
-        let _signal = options
+        let signal = options
             .and_then(|options| options.signal.clone())
             .unwrap_or_default();
-        let Some(provider) = self.get_provider(provider_id) else {
-            return Ok(None);
+        if signal.is_cancelled() {
+            return Err(ResolveError::Aborted);
+        }
+        let check = async {
+            let Some(provider) = self.get_provider(provider_id) else {
+                return Ok(None);
+            };
+            let credential = self.read_credential(provider_id, &signal).await?;
+            self.check_provider_auth(provider.as_ref(), credential.as_ref(), &signal)
+                .await
         };
-        let credential = self.read_credential(provider_id).await?;
-        self.check_provider_auth(provider.as_ref(), credential.as_ref())
-            .await
+        // Port of the `raceWithAbortSignal` wrapper around the check.
+        tokio::select! {
+            () = signal.cancelled() => Err(ResolveError::Aborted),
+            result = check => result,
+        }
     }
 
     /// Port of `getAvailable`: models whose providers have complete auth.
     pub async fn get_available(
         &self,
         provider_id: Option<&str>,
-        _options: Option<&AuthOperationOptions>,
+        options: Option<&AuthOperationOptions>,
     ) -> Result<Vec<Model>, ResolveError> {
-        let providers: Vec<Arc<dyn Provider>> = match provider_id {
-            Some(provider_id) => self.get_provider(provider_id).into_iter().collect(),
-            None => self.get_providers(),
-        };
-        let mut available = Vec::new();
-        for provider in providers {
-            let credential = self.read_credential(provider.id()).await?;
-            let auth = self
-                .check_provider_auth(provider.as_ref(), credential.as_ref())
-                .await?;
-            if auth.is_none() {
-                continue;
-            }
-            available.extend(provider.filter_models(provider.get_models(), credential.as_ref()));
+        let signal = options
+            .and_then(|options| options.signal.clone())
+            .unwrap_or_default();
+        if signal.is_cancelled() {
+            return Err(ResolveError::Aborted);
         }
-        Ok(available)
+        let available = async {
+            let providers: Vec<Arc<dyn Provider>> = match provider_id {
+                Some(provider_id) => self.get_provider(provider_id).into_iter().collect(),
+                None => self.get_providers(),
+            };
+            let mut available = Vec::new();
+            for provider in providers {
+                let credential = self.read_credential(provider.id(), &signal).await?;
+                let auth = self
+                    .check_provider_auth(provider.as_ref(), credential.as_ref(), &signal)
+                    .await?;
+                if auth.is_none() {
+                    continue;
+                }
+                available
+                    .extend(provider.filter_models(provider.get_models(), credential.as_ref()));
+            }
+            Ok(available)
+        };
+        // Port of the `raceWithAbortSignal` wrapper around the collection.
+        tokio::select! {
+            () = signal.cancelled() => Err(ResolveError::Aborted),
+            result = available => result,
+        }
     }
 
     /// Port of `getAuth` for a provider id or a model (model headers merge).
@@ -888,9 +943,21 @@ impl Models {
         })
     }
 
-    async fn read_credential(&self, provider_id: &str) -> Result<Option<Credential>, ResolveError> {
+    async fn read_credential(
+        &self,
+        provider_id: &str,
+        signal: &CancellationToken,
+    ) -> Result<Option<Credential>, ResolveError> {
+        if signal.is_cancelled() {
+            return Err(ResolveError::Aborted);
+        }
         self.credentials
-            .read(provider_id, None)
+            .read(
+                provider_id,
+                Some(&AuthOperationOptions {
+                    signal: Some(signal.clone()),
+                }),
+            )
             .await
             .map_err(|error| {
                 ResolveError::Models(ModelsError::with_cause(
@@ -905,6 +972,7 @@ impl Models {
         &self,
         provider: &dyn Provider,
         credential: Option<&Credential>,
+        signal: &CancellationToken,
     ) -> Result<Option<crate::ai::auth::types::AuthCheck>, ResolveError> {
         let auth = provider.auth();
         if let Some(Credential::OAuth(_)) = credential {
@@ -925,7 +993,7 @@ impl Models {
                 Some(Credential::ApiKey(api_key)) => Some(api_key.clone()),
                 _ => None,
             },
-            signal: Default::default(),
+            signal: signal.clone(),
         }) {
             return check.await.map_err(|error| {
                 ResolveError::Models(ModelsError::with_cause(
@@ -940,7 +1008,10 @@ impl Models {
             auth,
             self.credentials.as_ref(),
             Arc::clone(&self.auth_context),
-            None,
+            Some(&AuthResolutionOverrides {
+                signal: Some(signal.clone()),
+                ..Default::default()
+            }),
         )
         .await?;
         Ok(resolution.map(|result| crate::ai::auth::types::AuthCheck {
@@ -1040,9 +1111,9 @@ impl Models {
             ..Default::default()
         };
 
-        // Preserve the caller's non-auth option fields.
+        // Preserve the caller's non-auth option fields. `transformHeaders` is
+        // a Models-only option and is stripped before provider dispatch.
         if let Some(options) = options {
-            resolved.transform_headers = options.transform_headers.clone();
             resolved.temperature = options.temperature;
             resolved.sampling_params = options.sampling_params.clone();
             resolved.max_tokens = options.max_tokens;
@@ -1120,10 +1191,14 @@ async fn resolve_refresh_credential(
             return Ok(None);
         }
         let provider_id_owned = provider_id.to_string();
+        let signal_for_modify = signal.clone();
         let post = credentials
             .modify(
                 provider_id,
                 Box::new(move |current| {
+                    let oauth = Arc::clone(&oauth);
+                    let provider_id_owned = provider_id_owned.clone();
+                    let signal_for_modify = signal_for_modify.clone();
                     Box::pin(async move {
                         let Some(Credential::OAuth(current)) = current else {
                             return Ok(None);
@@ -1131,7 +1206,7 @@ async fn resolve_refresh_credential(
                         if crate::ai::auth::resolve::now_millis() < current.expires {
                             return Ok(None);
                         }
-                        match oauth.refresh(&current, Default::default()).await {
+                        match oauth.refresh(&current, signal_for_modify).await {
                             Ok(refreshed) => Ok(Some(Credential::OAuth(refreshed))),
                             Err(error) => Err(ModelsError::with_cause(
                                 ModelsErrorCode::OAuth,
@@ -1145,7 +1220,9 @@ async fn resolve_refresh_credential(
                             Result<Option<Credential>, crate::ai::auth::types::BoxedAuthError>,
                         >
                 }),
-                None,
+                Some(&crate::ai::auth::types::AuthOperationOptions {
+                    signal: Some(signal.clone()),
+                }),
             )
             .await
             .map_err(|error| {
@@ -1217,7 +1294,12 @@ async fn run_provider_refresh_phase(
     } = phase;
     let stored = models
         .models_store
-        .read(provider_id, None)
+        .read(
+            provider_id,
+            Some(&crate::ai::models_store::ModelsStoreOperationOptions {
+                signal: Some(signal.clone()),
+            }),
+        )
         .await
         .map_err(|error| {
             ModelsError::with_cause(
@@ -1249,13 +1331,18 @@ async fn run_provider_refresh_phase(
             if !is_current() {
                 return Ok(false);
             }
+            // Port of `{ signal }`: model-store waits are bound to the
+            // provider refresh signal.
+            let options = crate::ai::models_store::ModelsStoreOperationOptions {
+                signal: Some(signal.clone()),
+            };
             if let Some(persist) = publication.persist {
                 match persist {
                     Some(entry) => {
-                        store.write(&provider_id, entry, None).await?;
+                        store.write(&provider_id, entry, Some(&options)).await?;
                     }
                     None => {
-                        store.delete(&provider_id, None).await?;
+                        store.delete(&provider_id, Some(&options)).await?;
                     }
                 }
             }
