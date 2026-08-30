@@ -711,7 +711,8 @@ fn cause_run_id(cause: &UsageCause) -> Option<&str> {
 // Queries, metadata, errors
 // ---------------------------------------------------------------------------
 
-/// Port of `EntryOrder`.
+/// Port of `EntryOrder`. Defaults to newest-first, matching the TypeScript
+/// `EntryQuery.order` default.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum EntryOrder {
     NewestFirst,

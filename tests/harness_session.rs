@@ -236,8 +236,8 @@ async fn session_uses_one_injectable_id_generator_across_lane_views() {
     assert_eq!(thread_id, "generated-2");
 }
 
-/// `Session.view(lane)` in TypeScript returns a lane-scoped tree; the Rust
-/// port expresses lane views through the lane-scoped append helper.
+/// Appends through the raw storage entry API; the lane-view equivalent is
+/// `session.view(lane).append_custom_entry(...)`.
 async fn append_custom_on_lane(session: &Session, lane: &str) -> String {
     session
         .append_entry(

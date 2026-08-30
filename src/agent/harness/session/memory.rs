@@ -356,7 +356,22 @@ fn lock(state: &Mutex<SessionState>) -> std::sync::MutexGuard<'_, SessionState> 
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
+/// Port of the `assertValidLimit` half of the TypeScript session-level query
+/// validation. `usize` limits are always integers, so only zero is invalid;
+/// the TypeScript check additionally rejects fractional and negative values
+/// the Rust query types cannot express.
+fn assert_valid_limit(limit: Option<usize>) -> Result<(), SessionError> {
+    if limit == Some(0) {
+        return Err(SessionError::new(
+            SessionErrorCode::InvalidQuery,
+            "limit must be a positive integer",
+        ));
+    }
+    Ok(())
+}
+
 /// Port of `Session`: the tree view over a storage.
+#[derive(Clone)]
 pub struct Session {
     storage: Arc<dyn SessionStorage>,
     id_generator: IdGenerator,
@@ -384,6 +399,15 @@ impl Session {
     /// The injectable id generator (public readonly field in TypeScript).
     pub fn id_generator(&self) -> &IdGenerator {
         &self.id_generator
+    }
+
+    /// Port of `view`: a lane-scoped tree. `view("main")` mirrors the session
+    /// itself, exactly like the TypeScript early return.
+    pub fn view(&self, lane: &str) -> SessionView {
+        SessionView {
+            session: self.clone(),
+            lane: lane.to_string(),
+        }
     }
 
     pub async fn get_metadata(&self) -> SessionMetadata {
@@ -484,6 +508,7 @@ impl Session {
     }
 
     pub async fn find_records(&self, query: RecordQuery) -> Result<Vec<LaneRecord>, SessionError> {
+        assert_valid_limit(query.limit)?;
         if query.operation_kind.is_some()
             && query.record_type != Some(super::types::RecordType::OperationStarted)
         {
@@ -500,6 +525,7 @@ impl Session {
         lane: &str,
         limit: Option<usize>,
     ) -> Result<Vec<LaneRecord>, SessionError> {
+        assert_valid_limit(limit)?;
         Ok(self
             .storage
             .find_open_operations(lane.to_string(), limit)
@@ -507,6 +533,7 @@ impl Session {
     }
 
     pub async fn get_log(&self, options: LogOptions) -> Result<Vec<LogItem>, SessionError> {
+        assert_valid_limit(options.limit)?;
         Ok(self.storage.get_log(options).await)
     }
 
@@ -529,6 +556,7 @@ impl Session {
         query: EntryQuery,
         result_limit: Option<usize>,
     ) -> Result<Vec<Entry>, SessionError> {
+        assert_valid_limit(query.limit)?;
         let mut query = query;
         if let Some(result_limit) = result_limit {
             query.limit = Some(result_limit);
@@ -543,6 +571,7 @@ impl Session {
         bounds: BranchBounds,
         result_limit: Option<usize>,
     ) -> Result<Vec<Entry>, SessionError> {
+        assert_valid_limit(query.limit)?;
         let mut bounds = bounds;
         if bounds.start.is_none() {
             bounds.start = self.get_leaf_id_for_lane(default_lane).await?;
@@ -550,6 +579,15 @@ impl Session {
         let Some(start) = bounds.start.clone() else {
             return Ok(Vec::new());
         };
+        // The TypeScript storage throws `not_found` from its branch walk;
+        // the Rust storage trait is infallible on reads, so the session
+        // performs the same missing-start check before delegating.
+        if self.storage.get_entry(start.clone()).await.is_none() {
+            return Err(SessionError::new(
+                SessionErrorCode::NotFound,
+                format!("Entry not found: {start}"),
+            ));
+        }
         let mut query = query;
         if let Some(result_limit) = result_limit {
             query.limit = Some(result_limit);
@@ -612,6 +650,96 @@ impl Session {
 
     async fn commit_record(&self, record: LaneRecord) -> Result<LaneRecord, SessionError> {
         self.storage.append_record(record).await
+    }
+}
+
+/// Port of the `SessionTree` lane view returned by `Session::view`. Reads
+/// and appends are lane-scoped; the remaining methods delegate to the whole
+/// session exactly like the TypeScript view object.
+pub struct SessionView {
+    session: Session,
+    lane: String,
+}
+
+impl SessionView {
+    pub async fn get_leaf_id(&self) -> Result<Option<String>, SessionError> {
+        self.session.get_leaf_id_for_lane(&self.lane).await
+    }
+
+    pub async fn get_entry(&self, id: &str) -> Option<Entry> {
+        self.session.get_entry(id).await
+    }
+
+    pub async fn get_stats(&self) -> SessionStats {
+        self.session.get_stats().await
+    }
+
+    pub async fn get_name(&self) -> Option<String> {
+        self.session.get_name().await
+    }
+
+    pub async fn set_name(&self, name: Option<String>) -> Result<(), SessionError> {
+        self.session.set_name(name).await
+    }
+
+    pub async fn get_label(&self, target_id: &str) -> Option<String> {
+        self.session.get_label(target_id).await
+    }
+
+    pub async fn set_label(
+        &self,
+        target_id: &str,
+        label: Option<String>,
+    ) -> Result<(), SessionError> {
+        self.session.set_label(target_id, label).await
+    }
+
+    pub async fn find_entries(&self, query: EntryQuery) -> Result<Vec<Entry>, SessionError> {
+        self.session.query_entries(query, None).await
+    }
+
+    pub async fn find_entry(&self, query: EntryQuery) -> Result<Option<Entry>, SessionError> {
+        self.session
+            .query_entries(query, Some(1))
+            .await
+            .map(|entries| entries.into_iter().next())
+    }
+
+    pub async fn find_entries_on_branch(
+        &self,
+        query: EntryQuery,
+        bounds: BranchBounds,
+    ) -> Result<Vec<Entry>, SessionError> {
+        self.session
+            .query_branch_entries(&self.lane, query, bounds, None)
+            .await
+    }
+
+    pub async fn find_entry_on_branch(
+        &self,
+        query: EntryQuery,
+        bounds: BranchBounds,
+    ) -> Result<Option<Entry>, SessionError> {
+        self.session
+            .query_branch_entries(&self.lane, query, bounds, Some(1))
+            .await
+            .map(|entries| entries.into_iter().next())
+    }
+
+    pub async fn append_message(&self, message: AgentMessage) -> Result<String, SessionError> {
+        self.session
+            .append_message_to_lane(&self.lane, message)
+            .await
+    }
+
+    pub async fn append_custom_entry(
+        &self,
+        custom_type: &str,
+        data: Option<serde_json::Value>,
+    ) -> Result<String, SessionError> {
+        self.session
+            .append_custom_entry_to_lane(&self.lane, custom_type, data)
+            .await
     }
 }
 

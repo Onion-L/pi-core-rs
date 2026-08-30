@@ -18,7 +18,10 @@ use pi_core::agent::harness::session::testing::{
 async fn in_memory_repo_passes_the_conformance_cases() {
     let fixture = Arc::new(SessionBackendFixture::InMemory(InMemorySessionRepo::new()));
     let cases = create_session_backend_conformance(fixture);
-    assert!(cases.len() >= 10);
+    // 28 of the 30 TypeScript conformance cases; the two non-JSON payload
+    // rejection cases are not representable with the strongly typed Rust
+    // entries and records (see the notes in testing/mod.rs).
+    assert_eq!(cases.len(), 28);
     for case in &cases {
         let joined = tokio::spawn((case.run)()).await;
         assert!(

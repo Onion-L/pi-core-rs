@@ -59,9 +59,11 @@ fn assert_valid_cursor(_after_seq: Option<u64>) -> Result<(), SessionError> {
 }
 
 fn ordered<T: Clone>(items: &[T], order: Option<EntryOrder>) -> Vec<T> {
+    // An `undefined` order defaults to newest-first, matching the
+    // TypeScript `EntryQuery.order` / `RecordQuery.order` default.
     match order {
-        Some(EntryOrder::OldestFirst) | None => items.to_vec(),
-        Some(EntryOrder::NewestFirst) => items.iter().rev().cloned().collect(),
+        Some(EntryOrder::OldestFirst) => items.to_vec(),
+        Some(EntryOrder::NewestFirst) | None => items.iter().rev().cloned().collect(),
     }
 }
 
@@ -335,7 +337,10 @@ impl SessionState {
         assert_valid_cursor(query.cursor.map(|cursor| cursor.after_seq))?;
         let mut results: Vec<Entry> = Vec::new();
         if query.order == Some(EntryOrder::OldestFirst) {
-            let mut path = self.walk_to_root(Some(start), stop_at_id, stop_at_type)?;
+            // The TypeScript oldest-first branch walks to the root without
+            // bounds and applies the inclusive stop bound while iterating,
+            // keeping the root-side of the bound; reproduce that exactly.
+            let mut path = self.walk_to_root(Some(start), None, None)?;
             path.reverse();
             for entry in path {
                 let reached_bound =
