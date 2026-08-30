@@ -1475,3 +1475,142 @@ async fn omits_interleaved_thinking_beta_for_adaptive_thinking_models() {
     let beta = header(&request, "anthropic-beta").unwrap_or("");
     assert!(!beta.contains("interleaved-thinking-2025-05-14"));
 }
+
+// --- anthropic-tool-name-normalization.test.ts -----------------------------------
+//
+// The TS suite is gated on a live Anthropic OAuth token
+// (`describe.skipIf(!oauthToken)`), but the behavior under test is pure
+// name mapping applied whenever the api key is OAuth-shaped
+// (`sk-ant-oat`), so the port exercises it offline with a mock transport.
+
+fn named_tool(name: &str) -> Tool {
+    Tool {
+        name: name.to_string(),
+        description: format!("The {name} tool"),
+        parameters: json!({"type": "object", "properties": {"path": {"type": "string"}}}),
+        constrained_sampling: None,
+    }
+}
+
+async fn capture_oauth_tool_names(tools: &[Tool]) -> Vec<Value> {
+    let model = builtin("anthropic", "claude-haiku-4-5");
+    let fetch = Arc::new(CaptureFetch::new());
+    let options = AnthropicOptions {
+        base: StreamOptions {
+            base: ProviderRequestOptions {
+                api_key: Some("sk-ant-oat-test-token".to_string()),
+                fetch: Some(fetch.clone()),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let _ = stream_anthropic(&model, &tools_context(&tools), Some(&options))
+        .result()
+        .await;
+    body_of(&fetch.request())["tools"]
+        .as_array()
+        .expect("tools array")
+        .clone()
+}
+
+#[tokio::test]
+async fn normalizes_user_defined_tools_matching_claude_code_names() {
+    let tools = capture_oauth_tool_names(&[named_tool("todowrite")]).await;
+    assert_eq!(tools[0]["name"], json!("TodoWrite"));
+}
+
+#[tokio::test]
+async fn handles_pi_builtin_tool_names() {
+    let tools = capture_oauth_tool_names(&[
+        named_tool("read"),
+        named_tool("write"),
+        named_tool("edit"),
+        named_tool("bash"),
+    ])
+    .await;
+    let names: Vec<Value> = tools.iter().map(|tool| tool["name"].clone()).collect();
+    assert_eq!(
+        names,
+        vec![json!("Read"), json!("Write"), json!("Edit"), json!("Bash")]
+    );
+}
+
+#[tokio::test]
+async fn does_not_map_find_to_glob() {
+    // `find` is not a Claude Code tool name, so it must pass through.
+    let tools = capture_oauth_tool_names(&[named_tool("find")]).await;
+    assert_eq!(tools[0]["name"], json!("find"));
+}
+
+#[tokio::test]
+async fn keeps_custom_tool_names_without_a_claude_code_match() {
+    let tools = capture_oauth_tool_names(&[named_tool("my_custom_query")]).await;
+    assert_eq!(tools[0]["name"], json!("my_custom_query"));
+}
+
+/// A stream whose assistant turn calls the `TodoWrite` tool; the emitted
+/// tool call must map back onto the context's `todowrite` tool.
+struct ToolCallSseFetch {
+    requests: Mutex<Vec<HttpRequest>>,
+}
+
+impl HttpFetch for ToolCallSseFetch {
+    fn fetch<'a>(
+        &'a self,
+        request: HttpRequest,
+    ) -> futures::future::BoxFuture<'a, Result<HttpResponse, HttpFetchError>> {
+        self.requests.lock().unwrap().push(request);
+        let body = [
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_test\",\"usage\":{\"input_tokens\":10,\"output_tokens\":0}}}".to_string(),
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":\"TodoWrite\",\"input\":{}}}".to_string(),
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{}\"}}".to_string(),
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}".to_string(),
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"},\"usage\":{\"output_tokens\":5}}".to_string(),
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}".to_string(),
+        ]
+        .join("\n\n");
+        Box::pin(async move {
+            Ok(HttpResponse {
+                status: 200,
+                headers: vec![("content-type".to_string(), "text/event-stream".to_string())],
+                body: Box::pin(futures::stream::iter(vec![Ok(bytes::Bytes::from(body))])),
+            })
+        })
+    }
+}
+
+#[tokio::test]
+async fn round_trips_claude_code_tool_call_names_onto_the_context_tools() {
+    let model = builtin("anthropic", "claude-haiku-4-5");
+    let fetch = Arc::new(ToolCallSseFetch {
+        requests: Mutex::new(Vec::new()),
+    });
+    let options = AnthropicOptions {
+        base: StreamOptions {
+            base: ProviderRequestOptions {
+                api_key: Some("sk-ant-oat-test-token".to_string()),
+                fetch: Some(fetch.clone()),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let result = stream_anthropic(
+        &model,
+        &tools_context(&[named_tool("todowrite")]),
+        Some(&options),
+    )
+    .result()
+    .await;
+    assert_eq!(result.stop_reason, StopReason::ToolUse);
+    let tool_calls: Vec<&AssistantContent> = result
+        .content
+        .iter()
+        .filter(|block| matches!(block, AssistantContent::ToolCall(_)))
+        .collect();
+    assert_eq!(tool_calls.len(), 1);
+    assert!(matches!(tool_calls[0], AssistantContent::ToolCall(call) if call.name == "todowrite"));
+}
