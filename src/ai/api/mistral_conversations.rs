@@ -68,17 +68,42 @@ struct MistralChatMessage {
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
+#[serde(untagged)]
 enum MistralContent {
     Text(String),
     Chunks(Vec<MistralContentChunk>),
 }
 
+/// The `{type: "text", text}` part inside a `thinking` chunk array.
 #[derive(Clone, Debug, serde::Serialize)]
+struct MistralThinkingChunk {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    text: String,
+}
+
+impl MistralThinkingChunk {
+    fn new(text: String) -> Self {
+        Self { kind: "text", text }
+    }
+}
+
+/// Port of `MistralContentChunk` in its pre-wire camelCase form (`imageUrl`
+/// is renamed to `image_url` by `to_mistral_wire_payload`).
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
 enum MistralContentChunk {
-    Text(String),
-    #[serde(rename = "imageUrl")]
-    ImageUrl(String),
-    Thinking(Vec<String>),
+    Text {
+        text: String,
+    },
+    #[serde(rename = "image_url")]
+    ImageUrl {
+        #[serde(rename = "imageUrl")]
+        image_url: String,
+    },
+    Thinking {
+        thinking: Vec<MistralThinkingChunk>,
+    },
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -304,13 +329,17 @@ fn to_chat_messages(messages: &[Message], supports_images: bool) -> Vec<MistralC
                         })
                         .map(|item| match item {
                             crate::ai::types::BlockContent::Text(text) => {
-                                MistralContentChunk::Text(sanitize_surrogates(&text.text))
+                                MistralContentChunk::Text {
+                                    text: sanitize_surrogates(&text.text),
+                                }
                             }
                             crate::ai::types::BlockContent::Image(image) => {
-                                MistralContentChunk::ImageUrl(format!(
-                                    "data:{};base64,{}",
-                                    image.mime_type, image.data
-                                ))
+                                MistralContentChunk::ImageUrl {
+                                    image_url: format!(
+                                        "data:{};base64,{}",
+                                        image.mime_type, image.data
+                                    ),
+                                }
                             }
                         })
                         .collect();
@@ -341,16 +370,18 @@ fn to_chat_messages(messages: &[Message], supports_images: bool) -> Vec<MistralC
                     match block {
                         AssistantContent::Text(text) => {
                             if !text.text.trim().is_empty() {
-                                content_parts.push(MistralContentChunk::Text(sanitize_surrogates(
-                                    &text.text,
-                                )));
+                                content_parts.push(MistralContentChunk::Text {
+                                    text: sanitize_surrogates(&text.text),
+                                });
                             }
                         }
                         AssistantContent::Thinking(thinking) => {
                             if !thinking.thinking.trim().is_empty() {
-                                content_parts.push(MistralContentChunk::Thinking(vec![
-                                    sanitize_surrogates(&thinking.thinking),
-                                ]));
+                                content_parts.push(MistralContentChunk::Thinking {
+                                    thinking: vec![MistralThinkingChunk::new(sanitize_surrogates(
+                                        &thinking.thinking,
+                                    ))],
+                                });
                             }
                         }
                         AssistantContent::ToolCall(tool_call) => {
@@ -406,16 +437,15 @@ fn to_chat_messages(messages: &[Message], supports_images: bool) -> Vec<MistralC
                     supports_images,
                     result.is_error,
                 );
-                let mut tool_content = vec![MistralContentChunk::Text(tool_text)];
+                let mut tool_content = vec![MistralContentChunk::Text { text: tool_text }];
                 for part in &result.content {
                     if !supports_images {
                         continue;
                     }
                     if let crate::ai::types::BlockContent::Image(image) = part {
-                        tool_content.push(MistralContentChunk::ImageUrl(format!(
-                            "data:{};base64,{}",
-                            image.mime_type, image.data
-                        )));
+                        tool_content.push(MistralContentChunk::ImageUrl {
+                            image_url: format!("data:{};base64,{}", image.mime_type, image.data),
+                        });
                     }
                 }
                 messages_out.push(MistralChatMessage {
@@ -506,7 +536,8 @@ fn remap_content_chunks(content: &mut Value) {
     }
 }
 
-/// Port of `buildChatPayload` + `toMistralWirePayload`.
+/// Port of `buildChatPayload`: the camelCase SDK-style payload (the wire
+/// snake_case remap happens in `request_mistral_stream`, after `onPayload`).
 fn build_chat_payload(
     model: &Model,
     context: &Context,
@@ -518,15 +549,14 @@ fn build_chat_payload(
         messages,
         model.input.contains(&crate::ai::types::ModelInput::Image),
     );
-    let wire_messages: Vec<Value> = chat_messages
+    let message_values: Vec<Value> = chat_messages
         .iter()
         .map(|message| serde_json::to_value(message).unwrap_or(Value::Null))
         .collect();
-    let _ = &wire_messages;
     let mut payload = json!({
         "model": model.id,
         "stream": true,
-        "messages": wire_messages,
+        "messages": message_values,
     });
 
     if let Some(tools) = &context.tools
@@ -565,7 +595,6 @@ fn build_chat_payload(
         );
     }
 
-    to_mistral_wire_payload(&mut payload);
     Ok(payload)
 }
 
@@ -708,6 +737,8 @@ async fn request_mistral_stream(
     let fetch = options
         .and_then(|options| options.base.base.fetch.clone())
         .unwrap_or_else(default_fetch);
+    let mut payload = payload;
+    to_mistral_wire_payload(&mut payload);
     let request = HttpRequest {
         method: HttpMethod::Post,
         url: format!("{base_url}/v1/chat/completions"),
@@ -767,11 +798,31 @@ async fn request_mistral_stream(
 }
 
 /// Reads all Mistral events from a response body. Port of `readMistralEvents`
-/// + the consume loop; `Err` carries the transport error message.
+/// + the consume loop; `Err` carries the transport error message. Like the
+/// TypeScript `AbortSignal.timeout(options?.timeoutMs ?? 60_000)` combined
+/// with the caller's signal, the wait for body chunks is bounded by the
+/// request timeout and aborts when the caller cancels.
 async fn read_mistral_events(
     response: crate::ai::utils::http::HttpResponse,
+    timeout_ms: Option<u64>,
+    signal: Option<tokio_util::sync::CancellationToken>,
 ) -> Result<Vec<Value>, String> {
-    let body = crate::ai::utils::http::collect_text(response).await;
+    let body = tokio::select! {
+        text = crate::ai::utils::http::collect_text(response) => text,
+        _ = tokio::time::sleep(std::time::Duration::from_millis(
+            timeout_ms.unwrap_or(60_000),
+        )) => {
+            return Err("The operation was aborted due to timeout".to_string());
+        }
+        _ = async {
+            match signal.as_ref() {
+                Some(token) => token.cancelled().await,
+                None => std::future::pending::<()>().await,
+            }
+        } => {
+            return Err("This operation was aborted".to_string());
+        }
+    };
     let mut events = Vec::new();
     let mut buffer = body;
     while let Some((index, length)) = find_mistral_event_boundary(&buffer) {
@@ -903,7 +954,12 @@ async fn run_stream(
     producer.push(AssistantMessageEvent::Start {
         partial: output.clone(),
     });
-    let events = read_mistral_events(response).await?;
+    let events = read_mistral_events(
+        response,
+        options.and_then(|options| options.base.base.timeout_ms),
+        options.and_then(|options| options.base.base.signal.clone()),
+    )
+    .await?;
     let mut scratch_args: BTreeMap<usize, String> = BTreeMap::new();
     consume_chat_stream(model, output, producer, events, &mut scratch_args)?;
 
@@ -998,7 +1054,7 @@ pub fn stream_simple(
             } else {
                 None
             },
-            reasoning_effort: if should_use_reasoning {
+            reasoning_effort: if should_use_reasoning && uses_reasoning_effort(model) {
                 reasoning.map(|level| map_reasoning_effort(model, level))
             } else {
                 None
@@ -1043,21 +1099,36 @@ fn consume_chat_stream(
             None => {}
         }
     };
+    // TypeScript keeps one shared `currentBlock` object in `output.content`;
+    // the Rust scratch copy is written back into the message after every
+    // delta so the final content carries the accumulated text.
+    let sync_current_block = |output: &mut AssistantMessage, block: Option<&MistralBlock>| {
+        let Some(block) = block else {
+            return;
+        };
+        let index = output.content.len().saturating_sub(1);
+        match (block, output.content.get_mut(index)) {
+            (MistralBlock::Text(text), Some(AssistantContent::Text(target))) => {
+                target.text = text.text.clone();
+            }
+            (MistralBlock::Thinking(thinking), Some(AssistantContent::Thinking(target))) => {
+                target.thinking = thinking.thinking.clone();
+            }
+            _ => {}
+        }
+    };
 
     for event in events {
         // Mistral's streamed CompletionChunk carries an id field; keep the
         // first non-empty one.
         if output.response_id.is_none()
-            && let Some(id) = event.pointer("/data/id").and_then(Value::as_str)
+            && let Some(id) = event.get("id").and_then(Value::as_str)
             && !id.is_empty()
         {
             output.response_id = Some(id.to_string());
         }
 
-        if let Some(usage) = event
-            .pointer("/data/usage")
-            .filter(|usage| usage.is_object())
-        {
+        if let Some(usage) = event.get("usage").filter(|usage| usage.is_object()) {
             let prompt_tokens = usage
                 .get("prompt_tokens")
                 .and_then(Value::as_u64)
@@ -1082,7 +1153,7 @@ fn consume_chat_stream(
         }
 
         let Some(choice) = event
-            .pointer("/data/choices")
+            .get("choices")
             .and_then(Value::as_array)
             .and_then(|choices| choices.first())
         else {
@@ -1126,6 +1197,7 @@ fn consume_chat_stream(
                     if let Some(MistralBlock::Text(block)) = &mut current_block {
                         block.text.push_str(&text_delta);
                     }
+                    sync_current_block(output, current_block.as_ref());
                     producer.push(AssistantMessageEvent::TextDelta {
                         content_index: block_index(output),
                         delta: text_delta,
@@ -1165,6 +1237,7 @@ fn consume_chat_stream(
                     if let Some(MistralBlock::Thinking(block)) = &mut current_block {
                         block.thinking.push_str(&thinking_delta);
                     }
+                    sync_current_block(output, current_block.as_ref());
                     producer.push(AssistantMessageEvent::ThinkingDelta {
                         content_index: block_index(output),
                         delta: thinking_delta,
@@ -1192,6 +1265,7 @@ fn consume_chat_stream(
                     if let Some(MistralBlock::Text(block)) = &mut current_block {
                         block.text.push_str(&text_delta);
                     }
+                    sync_current_block(output, current_block.as_ref());
                     producer.push(AssistantMessageEvent::TextDelta {
                         content_index: block_index(output),
                         delta: text_delta,
