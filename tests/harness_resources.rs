@@ -283,6 +283,9 @@ async fn preserves_source_info_for_sourced_skills() {
     assert!(diagnostics.is_empty());
     assert_eq!(skills.len(), 1);
     assert_eq!(skills[0].0.name, "example");
+    assert_eq!(skills[0].0.description, "Example skill");
+    assert_eq!(skills[0].0.content, "Use this skill.");
+    assert_eq!(skills[0].0.file_path, format!("{root}/user/example/SKILL.md"));
     assert_eq!(skills[0].0.disable_model_invocation, Some(false));
     assert_eq!(skills[0].1, json!({ "type": "user" }));
 }
@@ -568,4 +571,264 @@ async fn applies_limit_and_entry_type_filters() {
         .await
         .expect("search");
     assert!(hits.is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// prompt-templates.test.ts "preserves source info for sourced prompt
+// templates" and the search.test.ts label/filter/JSONL cases.
+
+/// Port of "preserves source info for sourced prompt templates".
+#[tokio::test]
+async fn preserves_source_info_for_sourced_prompt_templates() {
+    let root = common::create_temp_dir();
+    let env = env_for(&root);
+    env.create_dir(
+        "prompts",
+        pi_core::agent::harness::types::CreateDirOptions::default(),
+        None,
+    )
+    .await
+    .unwrap();
+    write(&env, "prompts/example.md", "---\ndescription: Example\n---\nExample body").await;
+
+    let (templates, diagnostics) =
+        pi_core::agent::harness::prompt_templates::load_sourced_prompt_templates(
+            &env_trait(&env),
+            &[pi_core::agent::harness::prompt_templates::SourcedInput {
+                path: "prompts".to_string(),
+                source: json!({ "type": "project" }),
+            }],
+        )
+        .await;
+
+    assert!(diagnostics.is_empty());
+    assert_eq!(templates.len(), 1);
+    assert_eq!(templates[0].prompt_template.name, "example");
+    assert_eq!(
+        templates[0].prompt_template.description.as_deref(),
+        Some("Example")
+    );
+    assert_eq!(templates[0].prompt_template.content, "Example body");
+    assert_eq!(templates[0].source, json!({ "type": "project" }));
+}
+
+/// The sourced prompt-template diagnostics carry the source too (the TS
+/// `attaches source info to diagnostics` case for templates).
+#[tokio::test]
+async fn attaches_source_info_to_prompt_template_diagnostics() {
+    let root = common::create_temp_dir();
+    let env = env_for(&root);
+    write(&env, "broken.md", "---\ndescription: [unterminated\n---\nBody").await;
+
+    let (templates, diagnostics) =
+        pi_core::agent::harness::prompt_templates::load_sourced_prompt_templates(
+            &env_trait(&env),
+            &[pi_core::agent::harness::prompt_templates::SourcedInput {
+                path: "broken.md".to_string(),
+                source: json!({ "type": "user" }),
+            }],
+        )
+        .await;
+
+    assert!(templates.is_empty());
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].diagnostic.path, format!("{root}/broken.md"));
+    assert_eq!(diagnostics[0].source, json!({ "type": "user" }));
+}
+
+// ---------------------------------------------------------------------------
+// search.test.ts
+
+fn search_message(text: &str) -> pi_core::agent::types::AgentMessage {
+    pi_core::agent::types::AgentMessage::User(pi_core::ai::types::UserMessage {
+        role: pi_core::ai::types::RoleUser,
+        content: pi_core::ai::types::UserContent::Blocks(vec![pi_core::ai::types::BlockContent::Text(
+            pi_core::ai::types::TextContent {
+                text: text.to_string(),
+                ..Default::default()
+            },
+        )]),
+        timestamp: 1,
+    })
+}
+
+async fn memory_session(id: &str, created_at: i64) -> pi_core::agent::harness::session::memory::Session {
+    let storage = pi_core::agent::harness::session::memory::InMemorySessionStorage::new(
+        pi_core::agent::harness::session::types::SessionMetadata {
+            id: id.to_string(),
+            created_at,
+            parent_session_id: None,
+        },
+    );
+    let next_id = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+    pi_core::agent::harness::session::memory::Session::with_id_generator(
+        std::sync::Arc::new(storage),
+        std::sync::Arc::new(move || {
+            format!(
+                "entry-{}",
+                next_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1
+            )
+        }),
+    )
+}
+
+async fn collect_hits(
+    search: &std::sync::Arc<dyn pi_core::agent::search::SessionSearch>,
+    text: &str,
+    options: Option<pi_core::agent::search::SessionSearchOptions>,
+) -> Vec<pi_core::agent::search::SessionSearchHit> {
+    let mut hits = Vec::new();
+    let mut stream = search.search(text, options);
+    while let Some(hit) = futures::StreamExt::next(&mut stream).await {
+        hits.push(hit);
+    }
+    hits
+}
+
+/// Port of "includes labels in memory scanning projections".
+#[tokio::test]
+async fn includes_labels_in_memory_scanning_projections() {
+    let session = memory_session("session", 1).await;
+    let entry_id = session
+        .append_message(search_message("plain body"))
+        .await
+        .expect("append");
+    session
+        .set_label(&entry_id, "important label")
+        .await
+        .expect("set label");
+    let search = pi_core::agent::search::create_scanning_session_search(
+        pi_core::agent::search::ScanningReadableSource::Memory(vec![session]),
+        pi_core::agent::search::ScanningSessionSearchOptions::default(),
+    );
+
+    let hits = collect_hits(&search, "important", None).await;
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].session_id, "session");
+    assert_eq!(hits[0].entry_id.as_deref(), Some(entry_id.as_str()));
+}
+
+/// Port of "honors entry type filters and abort signals in scanning search".
+#[tokio::test]
+async fn honors_entry_type_filters_and_abort_signals_in_scanning_search() {
+    let session = memory_session("session", 1).await;
+    let message_entry_id = session
+        .append_message(search_message("auth message"))
+        .await
+        .expect("append message");
+    session
+        .append_custom_entry("note", json!({ "text": "auth custom" }))
+        .await
+        .expect("append custom");
+    let search = pi_core::agent::search::create_scanning_session_search(
+        pi_core::agent::search::ScanningReadableSource::Memory(vec![session]),
+        pi_core::agent::search::ScanningSessionSearchOptions::default(),
+    );
+
+    let hits = collect_hits(
+        &search,
+        "auth",
+        Some(pi_core::agent::search::SessionSearchOptions {
+            entry_types: Some(vec![pi_core::agent::harness::session::types::EntryType::Message]),
+            limit: None,
+            signal: None,
+        }),
+    )
+    .await;
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].session_id, "session");
+    assert_eq!(hits[0].entry_id.as_deref(), Some(message_entry_id.as_str()));
+
+    let signal = tokio_util::sync::CancellationToken::new();
+    signal.cancel();
+    let mut stream = search.search(
+        "auth",
+        Some(pi_core::agent::search::SessionSearchOptions {
+            entry_types: None,
+            limit: None,
+            signal: Some(signal),
+        }),
+    );
+    let aborted = futures::StreamExt::next(&mut stream).await;
+    match aborted {
+        Some(Err(error)) => {
+            let message = error.to_string();
+            assert!(
+                message.contains("aborted") || message.contains("Abort"),
+                "expected an abort error, got {message}"
+            );
+        }
+        other => panic!("expected an aborted search, got {other:?}"),
+    }
+}
+
+/// Port of "scans JSONL sessions from disk through the JSONL scanning
+/// source".
+#[tokio::test]
+async fn scans_jsonl_sessions_from_disk_through_the_jsonl_source() {
+    let root = common::create_temp_dir();
+    let env: Arc<NodeExecutionEnv> = Arc::new(NodeExecutionEnv::new(NodeExecutionEnvOptions {
+        cwd: root.to_string(),
+        ..Default::default()
+    }));
+    let options = pi_core::agent::harness::session::jsonl::repo::JsonlSessionRepoOptions {
+        fs: env.clone(),
+        sessions_root: root.to_string(),
+    };
+    let repository = pi_core::agent::harness::session::jsonl::repo::JsonlSessionRepo::new(
+        options.clone(),
+    );
+    let session = repository
+        .create(pi_core::agent::harness::session::jsonl::types::JsonlSessionCreateMetadata {
+            id: "jsonl".to_string(),
+            cwd: format!("{root}/workspace"),
+            ..Default::default()
+        })
+        .await
+        .expect("create jsonl session");
+    let entry_id = session
+        .append_message(search_message("jsonl backed auth entry"))
+        .await
+        .expect("append");
+    session
+        .set_label(&entry_id, "disk label")
+        .await
+        .expect("set label");
+    let other = repository
+        .create(pi_core::agent::harness::session::jsonl::types::JsonlSessionCreateMetadata {
+            id: "other".to_string(),
+            cwd: format!("{root}/other"),
+            ..Default::default()
+        })
+        .await
+        .expect("create other session");
+    let other_entry_id = other
+        .append_message(search_message("jsonl backed auth entry in another cwd"))
+        .await
+        .expect("append other");
+
+    let source = pi_core::agent::search::ScanningReadableSource::Jsonl(
+        pi_core::agent::search::JsonlScanningSource {
+            options: options.clone(),
+            query: Default::default(),
+        },
+    );
+    let search = pi_core::agent::search::create_scanning_session_search(
+        source,
+        pi_core::agent::search::ScanningSessionSearchOptions::default(),
+    );
+
+    let auth_hits = collect_hits(&search, "auth", None).await;
+    assert_eq!(auth_hits.len(), 2);
+    let mut seen = Vec::new();
+    for hit in &auth_hits {
+        seen.push((hit.session_id.as_str(), hit.entry_id.as_deref()));
+    }
+    assert!(seen.contains(&("jsonl", Some(entry_id.as_str()))));
+    assert!(seen.contains(&("other", Some(other_entry_id.as_str()))));
+
+    let label_hits = collect_hits(&search, "disk", None).await;
+    assert_eq!(label_hits.len(), 1);
+    assert_eq!(label_hits[0].session_id, "jsonl");
+    assert_eq!(label_hits[0].entry_id.as_deref(), Some(entry_id.as_str()));
 }

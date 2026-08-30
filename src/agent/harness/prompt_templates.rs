@@ -363,3 +363,50 @@ pub fn substitute_args(content: &str, args: &[String]) -> String {
 pub fn format_prompt_template_invocation(template: &PromptTemplate, args: &[String]) -> String {
     substitute_args(&template.content, args)
 }
+
+/// A sourced prompt-template pair (the `loadSourcedPromptTemplates` output).
+pub struct SourcedPromptTemplate<TSource> {
+    pub prompt_template: PromptTemplate,
+    pub source: TSource,
+}
+
+/// A sourced prompt-template diagnostic.
+pub struct SourcedPromptTemplateDiagnostic<TSource> {
+    pub diagnostic: PromptTemplateDiagnostic,
+    pub source: TSource,
+}
+
+/// Port of `loadSourcedPromptTemplates`: loads each input path and pairs the
+/// templates and diagnostics with the input's source.
+pub async fn load_sourced_prompt_templates<TSource: Clone>(
+    env: &Arc<dyn ExecutionEnv>,
+    inputs: &[SourcedInput<TSource>],
+) -> (
+    Vec<SourcedPromptTemplate<TSource>>,
+    Vec<SourcedPromptTemplateDiagnostic<TSource>>,
+) {
+    let mut prompt_templates = Vec::new();
+    let mut diagnostics = Vec::new();
+    for input in inputs {
+        let result = load_prompt_templates(env, &[input.path.clone()]).await;
+        for prompt_template in result.prompt_templates {
+            prompt_templates.push(SourcedPromptTemplate {
+                prompt_template,
+                source: input.source.clone(),
+            });
+        }
+        for diagnostic in result.diagnostics {
+            diagnostics.push(SourcedPromptTemplateDiagnostic {
+                diagnostic,
+                source: input.source.clone(),
+            });
+        }
+    }
+    (prompt_templates, diagnostics)
+}
+
+/// One sourced loader input (`{ path, source }`).
+pub struct SourcedInput<TSource> {
+    pub path: String,
+    pub source: TSource,
+}

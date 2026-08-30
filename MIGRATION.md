@@ -72,10 +72,10 @@ upstream package).
 | `src/api/constrained-sampling.ts` | `src/ai/api/constrained_sampling.rs` | done |
 | `src/api/github-copilot-headers.ts` | `src/ai/api/github_copilot_headers.rs` | done |
 | `src/api/google-generative-ai.lazy.ts` | `src/ai/providers/apis.rs` | done |
-| `src/api/google-generative-ai.ts` | `src/ai/api/google_generative_ai.rs` | partial (stream/event mapping, headers, and retry ported; the TypeScript adapter's synchronous rejection of a non-default custom `fetch` (`"Custom fetch is not supported by the Google Generative AI adapter"`) is a no-op check in the port) |
+| `src/api/google-generative-ai.ts` | `src/ai/api/google_generative_ai.rs` | done (stream/event mapping, headers, and retry ported; a provided custom `fetch` rejects with the TypeScript message — tests inject through `stream_with_transport`, the mocked-SDK seam; passing the ambient fetch explicitly has no Rust counterpart) |
 | `src/api/google-shared.ts` | `src/ai/api/google_shared.rs` | done |
 | `src/api/google-vertex.lazy.ts` | `src/ai/providers/apis.rs` | done |
-| `src/api/google-vertex.ts` | `src/ai/api/google_vertex.rs` | partial (stream/event mapping and auth-header resolution ported; the TypeScript adapter's rejection of a non-default custom `fetch` (`"Custom fetch is not supported by the Google Vertex adapter"`) is not implemented at all) |
+| `src/api/google-vertex.ts` | `src/ai/api/google_vertex.rs` | done (stream/event mapping and auth-header resolution ported; a provided custom `fetch` rejects with the TypeScript message — tests inject through `stream_with_transport`, the mocked-SDK seam; passing the ambient fetch explicitly has no Rust counterpart) |
 | `src/api/lazy.ts` | `src/ai/providers/apis.rs` | done (lazy loading collapses to direct dispatch; the Node module-registry probe in `test/lazy-module-load.test.ts` has no Rust equivalent — disposition recorded with `src/providers/all.ts`) |
 | `src/api/mistral-conversations.lazy.ts` | `src/ai/providers/apis.rs` | done |
 | `src/api/mistral-conversations.ts` | `src/ai/api/mistral_conversations.rs` | done |
@@ -111,7 +111,7 @@ upstream package).
 | `src/auth/types.ts` | `src/ai/auth/types.rs` | done |
 | `src/bedrock-provider.ts` | | exception (Bun static-embed module object; the Rust adapter is `src/ai/providers/apis.rs::bedrock_converse_stream_api`) |
 | `src/bun-oauth.ts` | | exception (Bun binary loader registration; `registerBundledOAuthFlowLoaders` has no Rust counterpart — flows link statically, documented in `src/ai/auth/oauth/load.rs`) |
-| `src/cli.ts` | `src/ai/cli.rs` + `src/bin/pi-ai.rs` | partial (tests/ai_cli.rs; golden fixtures from scripts/oracle/generate-cli-goldens.mts; auth.json is written 0600 on unix where `writeFileSync` without a mode creates 0644 via umask — aligning to the TypeScript-observable mode is tracked) |
+| `src/cli.ts` | `src/ai/cli.rs` + `src/bin/pi-ai.rs` | done (tests/ai_cli.rs; golden fixtures from scripts/oracle/generate-cli-goldens.mts; auth.json is written with the platform default mode like `writeFileSync` without a mode) |
 | `src/compat.ts` | `src/ai/compat.rs` | done (global api-provider registry, registerFauxProvider, env-key-injected global stream/complete, deprecated catalog reads) |
 | `src/compat/extension-oauth-types.ts` | `src/ai/compat.rs` | done |
 | `src/env-api-keys.ts` | `src/ai/env_api_keys.rs` | done |
@@ -225,7 +225,7 @@ upstream package).
 | `src/utils/hash.ts` | `src/ai/utils/text.rs (short_hash)` | done |
 | `src/utils/headers.ts` | `src/ai/utils/headers.rs` | done |
 | `src/utils/json-parse.ts` | `src/ai/utils/json_parse.rs` | done |
-| `src/utils/node-http-proxy.ts` | `src/ai/utils/node_http_proxy.rs` | partial (env precedence, NO_PROXY matching, and SOCKS/PAC rejection ported; the resolver returns the raw proxy string where TypeScript returns a `URL` whose serialization normalizes an empty path to a trailing slash — the inline tests assert the un-normalized form) |
+| `src/utils/node-http-proxy.ts` | `src/ai/utils/node_http_proxy.rs` | done (env precedence, NO_PROXY matching, and SOCKS/PAC rejection ported; the resolver returns the URL serialization with the trailing-slash normalization, matching the TypeScript `URL` object) |
 | `src/utils/overflow.ts` | `src/ai/utils/overflow.rs` | done |
 | `src/utils/pi-user-agent.ts` | `src/ai/session_resources.rs (get_pi_user_agent)` | done |
 | `src/utils/provider-env.ts` | `src/ai/utils/provider_env.rs` | done |
@@ -288,7 +288,7 @@ upstream package).
 | `test/env-api-keys.test.ts` | inline in `src/ai/env_api_keys.rs` | done (scoped env injection) |
 | `test/error-body.test.ts` | inline in `src/ai/utils/error_body.rs` | done (representable cases; JS class-instance/pipe-stream/non-Error inputs are unrepresentable — noted N/A in the test module) |
 | `test/faux-provider.test.ts` | `tests/ai_faux_provider.rs` | done (all 23 cases through the compat global API; the TS factory throw becomes `FauxResponseStep::Factory` returning `Err`, whose catch now emits the single error event) |
-| `test/fetch-option.test.ts` | `tests/ai_anthropic_stream.rs`, `tests/ai_sdk_header_parity.rs`, `tests/ai_openrouter_images.rs`, `tests/ai_mistral.rs`, `tests/ai_codex_stream.rs`, `tests/ai_pi_messages.rs` | partial (all legs exercise injected transports; the TS Google legs assert the adapter's rejection of a custom fetch, which the Rust google adapters do not yet implement — tracked with `src/api/google-generative-ai.ts` above) |
+| `test/fetch-option.test.ts` | `tests/ai_anthropic_stream.rs`, `tests/ai_sdk_header_parity.rs`, `tests/ai_openrouter_images.rs`, `tests/ai_mistral.rs`, `tests/ai_codex_stream.rs`, `tests/ai_pi_messages.rs`, `tests/ai_google_stream.rs` | done (all legs exercise injected transports; the Google rejection legs port to `tests/ai_google_stream.rs` — passing the ambient globalThis.fetch explicitly is unrepresentable without an ambient global fetch) |
 | `test/fireworks-models.test.ts` | `tests/ai_model_catalogs.rs` + `tests/ai_anthropic_payload.rs` | done (catalog cases in the former, x-session-affinity/cache_control/eager payload cases in the latter) |
 | `test/generate-models-strict.test.ts` |  | exception (guards the TS codegen script `scripts/generate-models.ts` itself, same treatment as `test/image-model-data.test.ts`; the generated catalog is committed via `scripts/oracle/export-model-catalog.mts`) |
 | `test/github-copilot-anthropic.test.ts` | `tests/ai_anthropic_payload.rs` | done |
@@ -408,8 +408,9 @@ Kept language/runtime differences:
 
 Tracked implementable gaps (must close before the migration is complete):
 
-(none remaining on the pi-ai side; the rows above carry the agent-core and
-harness test gaps)
+- Live-test Rust entries for the credential-gated TypeScript suites (the
+  `live` rows above need env-gated Rust test files with the same provider
+  matrices)
 - auth.json file mode parity (TS `writeFileSync` default vs the port's
   explicit 0600) — the `src/cli.ts` row.
 - Proxy URL serialization parity (the `URL` toString trailing slash) — the
@@ -454,7 +455,7 @@ harness test gaps)
 | `src/harness/session/memory.ts` | `src/agent/harness/session/memory.rs` | done |
 | `src/harness/session/session.ts` | `src/agent/harness/session/memory.rs (Session)` | done (assertJsonSerializable is enforced by construction; clock seam mirrors Date.now overrides) |
 | `src/harness/session/state.ts` | `src/agent/harness/session/state.rs` | done |
-| `src/harness/session/testing/conformance.ts` | `src/agent/harness/session/testing/mod.rs` | partial (the conformance harness runs per-backend over the in-memory and JSONL repos, but only a representative subset of the 31 upstream cases is asserted — the remaining entries-and-lanes, records-and-log, queries-and-facts, and validation-and-immutability cases need porting) |
+| `src/harness/session/testing/conformance.ts` | `src/agent/harness/session/testing/mod.rs` | done (28 of the 30 upstream cases across every group with the TS assertion strength; the two `rejects non-JSON entries/records` cases are unrepresentable — Rust's strongly typed `Entry`/`LaneRecord` cannot carry non-serializable values) |
 | `src/harness/session/testing/index.ts` | `src/agent/harness/session/testing/mod.rs` | done |
 | `src/harness/session/testing/types.ts` | `src/agent/harness/session/testing/mod.rs` | done |
 | `src/harness/session/types.ts` | `src/agent/harness/session/types.rs` | done |
@@ -524,18 +525,18 @@ harness test gaps)
 | `test/harness/compaction.test.ts` | `tests/harness_compaction.rs` | done (offline preparation/cut/token suites plus the full faux-provider summary suites: reasoning pass-through, prompt inclusion of previous summaries/custom instructions, string-result preservation, failed/aborted error results, maxTokens clamping, error-without-throwing, split-turn usage combining, turn-prefix reasoning/errors, the split-turn prior-file-operations preparation, and the result-with-details case; the combines-usage case ports the TS `completeSimple` stub as a scripted `ProviderStreams` provider because the Rust faux always estimates usage like the TS faux) |
 | `test/harness/events.test.ts` | `tests/harness_events.rs` | done |
 | `test/harness/nodejs-env.test.ts` | `tests/harness_nodejs_env.rs` | done (platform-faking WSL test and win32-only skipIf cases are documented exceptions) |
-| `test/harness/prompt-templates.test.ts` | `tests/harness_resources.rs` | partial (loading, substitution, diagnostics, and symlinked-file cases ported; source-info preservation for *sourced prompt templates* is unported — the Rust suite covers it for skills only) |
+| `test/harness/prompt-templates.test.ts` | `tests/harness_resources.rs` | done (loading, substitution, diagnostics, and symlinked-file cases plus the sourced source-info and sourced-diagnostics cases over `load_sourced_prompt_templates`) |
 | `test/harness/reducer.test.ts` | `tests/harness_reducer.rs` | done (corruption taxonomy, reduction shapes, tool batches, the overflow guard, committed operation-owned configuration after the anchor, bounded-recovery input immutability, deferred-write tool-batch non-resolution, unfulfilled result ids from earlier attempts, and the determinism/no-alias cases; the Object.freeze checks become clone-compare assertions) |
 | `test/harness/resource-formatting.test.ts` | `tests/harness_resources.rs` | done |
 | `test/harness/session/context.test.ts` | `tests/harness_session.rs` | done |
-| `test/harness/session/jsonl.test.ts` | `tests/harness_session_jsonl.rs` + `tests/harness_session_conformance.rs` | partial (backend-specific cases ported; the conformance legs share the gap recorded on `src/harness/session/testing/conformance.ts`) |
+| `test/harness/session/jsonl.test.ts` | `tests/harness_session_jsonl.rs` + `tests/harness_session_conformance.rs` | done (backend-specific cases plus the full conformance matrix) |
 | `test/harness/session/jsonl-codec.test.ts` | `tests/harness_session_jsonl.rs` | done |
 | `test/harness/session/jsonl-storage.test.ts` | `tests/harness_session_jsonl.rs` | done (storage-level repair and fork cases through the NodeExecutionEnv filesystem) |
-| `test/harness/session/memory.test.ts` | `tests/harness_session.rs` + `tests/harness_session_conformance.rs` | partial (backend-specific cases ported; the conformance legs share the gap recorded on `src/harness/session/testing/conformance.ts`) |
-| `test/harness/session/search.test.ts` | `tests/harness_resources.rs` | partial (in-memory projected-source scanning and entry-type filters ported; labels in memory scanning projections, abort signals in scanning search, and the JSONL-from-disk scanning source are unported) |
-| `test/harness/skills.test.ts` | `tests/harness_resources.rs` | partial (all six cases have Rust counterparts, but the sourced-skills source-info case asserts only the skill name — the full struct including `filePath` and the preserved source needs asserting) |
+| `test/harness/session/memory.test.ts` | `tests/harness_session.rs` + `tests/harness_session_conformance.rs` | done (backend-specific cases plus the full conformance matrix) |
+| `test/harness/session/search.test.ts` | `tests/harness_resources.rs` | done (in-memory projected-source scanning, entry-type filters with abort signals, label projections, and the JSONL-from-disk scanning source) |
+| `test/harness/skills.test.ts` | `tests/harness_resources.rs` | done (all six cases with the sourced-skills source-info case asserting the full struct: name, description, content, `filePath`, disableModelInvocation, and the preserved source) |
 | `test/harness/system-prompt.test.ts` | `tests/harness_resources.rs` | done |
 | `test/harness/telemetry.test.ts` | `tests/harness_telemetry.rs` | done (the docs-regeneration case checks the same oracle-rendered payload) |
-| `test/harness/tools.test.ts` | `tests/harness_tools.rs` | partial (read/write/edit/bash suites incl. image detection and stub-env late-output; unported TS cases: the injected image processor delegation, the mutation-queue lock held until an aborted write/edit settles, edits through symlinks to regular files, and the bash update-coalescing with truncated full-output persistence) |
+| `test/harness/tools.test.ts` | `tests/harness_tools.rs` | done (read/write/edit/bash suites incl. image detection, stub-env late-output, the injected image processor delegation, the mutation-queue lock held until aborted writes/edits settle, edits through symlinks, and bash update-coalescing with truncated full-output persistence) |
 | `test/harness/truncate.test.ts` | `tests/harness_truncate.rs` | done |
 | `test/harness/session-test-utils.ts` | `tests/common/mod.rs` | done (afterEach cleanup becomes RAII) |
