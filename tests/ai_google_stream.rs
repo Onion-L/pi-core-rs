@@ -11,9 +11,11 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use pi_core::ai::api::google_generative_ai::{
-    GoogleOptions, stream as stream_google_generative_ai,
+    GoogleOptions, stream_with_transport as stream_google_generative_ai,
 };
-use pi_core::ai::api::google_vertex::{GoogleVertexOptions, stream as stream_google_vertex};
+use pi_core::ai::api::google_vertex::{
+    GoogleVertexOptions, stream_with_transport as stream_google_vertex,
+};
 use pi_core::ai::types::{
     AssistantContent, Context, Message, Model, ProviderHeaders, ProviderRequestOptions, RoleUser,
     StopReason, StreamOptions, UserContent, UserMessage,
@@ -150,6 +152,7 @@ async fn preserves_raw_gemini_finish_reasons_for_google_generative_ai_errors() {
         &generative_ai_model(),
         &raw_stop_context(),
         Some(&google_options(fetch)),
+        None,
     )
     .result()
     .await;
@@ -173,6 +176,7 @@ async fn preserves_raw_gemini_finish_reasons_for_google_vertex_errors() {
         &vertex_model(),
         &raw_stop_context(),
         Some(&vertex_options(fetch)),
+        None,
     )
     .result()
     .await;
@@ -193,6 +197,7 @@ async fn preserves_max_tokens_with_a_tool_call_as_length_for_google_generative_a
         &generative_ai_model(),
         &raw_stop_context(),
         Some(&google_options(fetch)),
+        None,
     )
     .result()
     .await;
@@ -215,6 +220,7 @@ async fn preserves_max_tokens_with_a_tool_call_as_length_for_google_vertex() {
         &vertex_model(),
         &raw_stop_context(),
         Some(&vertex_options(fetch)),
+        None,
     )
     .result()
     .await;
@@ -237,6 +243,7 @@ async fn maps_stop_with_a_tool_call_to_tool_use_for_google_generative_ai() {
         &generative_ai_model(),
         &raw_stop_context(),
         Some(&google_options(fetch)),
+        None,
     )
     .result()
     .await;
@@ -259,6 +266,7 @@ async fn maps_stop_with_a_tool_call_to_tool_use_for_google_vertex() {
         &vertex_model(),
         &raw_stop_context(),
         Some(&vertex_options(fetch)),
+        None,
     )
     .result()
     .await;
@@ -285,10 +293,14 @@ async fn capture_google_headers(headers: Option<ProviderHeaders>) -> Vec<(String
     let mut options = google_options(fetch.clone());
     options.base.base.headers = headers;
 
-    let message =
-        stream_google_generative_ai(&generative_ai_model(), &raw_stop_context(), Some(&options))
-            .result()
-            .await;
+    let message = stream_google_generative_ai(
+        &generative_ai_model(),
+        &raw_stop_context(),
+        Some(&options),
+        None,
+    )
+    .result()
+    .await;
     assert_eq!(message.stop_reason, StopReason::Stop);
     assert!(message.error_message.is_none());
 
@@ -401,4 +413,48 @@ async fn does_not_retry_a_non_retryable_status() {
 
     assert_eq!(result.unwrap_err(), error);
     assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+/// Port of the fetch-option.test.ts leg "rejects custom fetch for Google
+/// adapters instead of silently bypassing it": the `fetch` option carries a
+/// custom transport in the Rust port, which is exactly the case the
+/// TypeScript adapters reject. (The companion "allows Google adapters to
+/// receive globalThis.fetch explicitly" leg is unrepresentable — there is no
+/// ambient global fetch to pass identically.)
+#[tokio::test]
+async fn rejects_custom_fetch_for_google_adapters() {
+    let model = generative_ai_model();
+    let context = raw_stop_context();
+    // Any custom transport triggers the rejection; the mock never answers,
+    // so a bypass would hang the test.
+    let options = google_options(google_sse_fetch("STOP", false));
+
+    let message = pi_core::ai::api::google_generative_ai::stream(&model, &context, Some(&options))
+        .result()
+        .await;
+    assert!(
+        message
+            .error_message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Custom fetch is not supported by the Google Generative AI adapter"),
+        "unexpected error: {:?}",
+        message.error_message
+    );
+
+    let model = vertex_model();
+    let options = vertex_options(google_sse_fetch("STOP", false));
+    let _ = &options;
+    let message = pi_core::ai::api::google_vertex::stream(&model, &context, Some(&options))
+        .result()
+        .await;
+    assert!(
+        message
+            .error_message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Custom fetch is not supported by the Google Vertex adapter"),
+        "unexpected error: {:?}",
+        message.error_message
+    );
 }

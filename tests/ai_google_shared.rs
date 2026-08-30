@@ -13,13 +13,13 @@
 
 use std::sync::{Arc, Mutex};
 
-use pi_core::ai::api::google_generative_ai::stream_simple as stream_simple_google;
+use pi_core::ai::api::google_generative_ai::stream_simple_with_transport as stream_simple_google;
 use pi_core::ai::api::google_shared::{
     FunctionCallingConfigMode, convert_messages, convert_tools, is_thinking_part,
     requires_tool_call_id, resolve_google_function_calling_mode, resolve_google_thinking_level,
     retain_thought_signature, supports_google_strict_tool_sampling,
 };
-use pi_core::ai::api::google_vertex::stream_simple as stream_simple_vertex;
+use pi_core::ai::api::google_vertex::stream_simple_with_transport as stream_simple_vertex;
 use pi_core::ai::types::{
     AssistantContent, AssistantMessage, BlockContent, ConstrainedSamplingConfig,
     ConstrainedSamplingStrict, Context, ImageContent, Message, Model, ModelCost, ModelInput,
@@ -1004,7 +1004,7 @@ async fn capture_google_payload(
         ..Default::default()
     };
 
-    let result = stream_simple_google(model, &capture_context(), Some(&options))
+    let result = stream_simple_google(model, &capture_context(), Some(&options), None)
         .result()
         .await;
 
@@ -1050,7 +1050,7 @@ async fn capture_vertex_payload(
         ..Default::default()
     };
 
-    let result = stream_simple_vertex(model, &capture_context(), Some(&options))
+    let result = stream_simple_vertex(model, &capture_context(), Some(&options), None)
         .result()
         .await;
 

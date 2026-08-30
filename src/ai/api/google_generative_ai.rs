@@ -294,6 +294,7 @@ async fn request_stream(
     options_headers: Option<&ProviderHeaders>,
     options: Option<&GoogleOptions>,
     params: Value,
+    transport: Option<std::sync::Arc<dyn crate::ai::utils::http::HttpFetch>>,
 ) -> Result<crate::ai::utils::http::HttpResponse, String> {
     // The SDK merges the default User-Agent with model/request headers into a
     // single record (`providerHeadersToRecord`); later sources override and
@@ -327,8 +328,8 @@ async fn request_stream(
     ];
     headers.extend(header_map);
 
-    let fetch = options
-        .and_then(|options| options.base.base.fetch.clone())
+    let fetch = transport
+        .or_else(|| options.and_then(|options| options.base.base.fetch.clone()))
         .unwrap_or_else(default_fetch);
     // The SDK appends the method path; baseUrl already includes the version.
     let base_url = model.base_url.trim_end_matches('/');
@@ -373,6 +374,31 @@ pub fn stream(
     context: &Context,
     options: Option<&GoogleOptions>,
 ) -> AssistantMessageEventStream {
+    // The TypeScript adapter rejects any fetch that is not globalThis.fetch;
+    // in the Rust port the `fetch` option only ever carries a custom
+    // transport, so its presence is exactly that rejection case (passing the
+    // ambient fetch explicitly has no Rust counterpart).
+    if options
+        .and_then(|options| options.base.base.fetch.as_ref())
+        .is_some()
+    {
+        return crate::ai::api::openai_completions::error_stream(
+            model,
+            "Custom fetch is not supported by the Google Generative AI adapter",
+        );
+    }
+    stream_with_transport(model, context, options, None)
+}
+
+/// The adapter body with an explicitly provided transport: the test seam
+/// standing in for the mocked `@google/genai` SDK (the TypeScript tests mock
+/// the SDK module instead of passing a custom fetch).
+pub fn stream_with_transport(
+    model: &Model,
+    context: &Context,
+    options: Option<&GoogleOptions>,
+    transport: Option<std::sync::Arc<dyn crate::ai::utils::http::HttpFetch>>,
+) -> AssistantMessageEventStream {
     let stream = create_assistant_message_event_stream();
     let model = model.clone();
     let context = context.clone();
@@ -391,7 +417,15 @@ pub fn stream(
             ..Default::default()
         };
 
-        let result = run_stream(&model, &context, options.as_ref(), &mut output, &producer).await;
+        let result = run_stream(
+            &model,
+            &context,
+            options.as_ref(),
+            transport,
+            &mut output,
+            &producer,
+        )
+        .await;
         if let Err(error) = result {
             let aborted = options
                 .as_ref()
@@ -435,16 +469,10 @@ async fn run_stream(
     model: &Model,
     context: &Context,
     options: Option<&GoogleOptions>,
+    transport: Option<std::sync::Arc<dyn crate::ai::utils::http::HttpFetch>>,
     output: &mut AssistantMessage,
     producer: &AssistantMessageEventStream,
 ) -> Result<(), String> {
-    if options
-        .and_then(|options| options.base.base.fetch.as_ref())
-        .is_some()
-    {
-        // The TS adapter rejects a non-default custom fetch; the Rust port
-        // accepts injectable transports, so this is a no-op check.
-    }
     let api_key: String = options
         .and_then(|options| options.base.base.api_key.clone())
         .ok_or_else(|| format!("No API key for provider: {}", model.provider))?;
@@ -462,6 +490,7 @@ async fn run_stream(
         options.and_then(|options| options.base.base.headers.as_ref()),
         options,
         params,
+        transport,
     )
     .await?;
 
@@ -764,6 +793,16 @@ pub fn stream_simple(
     context: &Context,
     options: Option<&SimpleStreamOptions>,
 ) -> AssistantMessageEventStream {
+    stream_simple_with_transport(model, context, options, None)
+}
+
+/// [`stream_simple`] with an explicit transport (the SDK-mock test seam).
+pub fn stream_simple_with_transport(
+    model: &Model,
+    context: &Context,
+    options: Option<&SimpleStreamOptions>,
+    transport: Option<std::sync::Arc<dyn crate::ai::utils::http::HttpFetch>>,
+) -> AssistantMessageEventStream {
     let api_key = options.and_then(|options| options.base.base.api_key.clone());
     if api_key.is_none() {
         return crate::ai::api::openai_completions::error_stream(
@@ -780,7 +819,7 @@ pub fn stream_simple(
         options.base.base.api_key.as_deref(),
     );
     let Some(reasoning) = options.reasoning else {
-        return stream(
+        return stream_with_transport(
             model,
             context,
             Some(&GoogleOptions {
@@ -792,6 +831,7 @@ pub fn stream_simple(
                 }),
                 ..Default::default()
             }),
+            transport,
         );
     };
 
@@ -803,7 +843,7 @@ pub fn stream_simple(
     };
 
     if is_gemini3_pro_model(model) || is_gemini3_flash_model(model) || is_gemma4_model(model) {
-        return stream(
+        return stream_with_transport(
             model,
             context,
             Some(&GoogleOptions {
@@ -815,10 +855,11 @@ pub fn stream_simple(
                 }),
                 ..Default::default()
             }),
+            transport,
         );
     }
 
-    stream(
+    stream_with_transport(
         model,
         context,
         Some(&GoogleOptions {
@@ -834,5 +875,6 @@ pub fn stream_simple(
             }),
             ..Default::default()
         }),
+        transport,
     )
 }

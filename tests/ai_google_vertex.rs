@@ -18,7 +18,7 @@ use std::sync::{Arc, Mutex};
 
 use pi_core::ai::api::google_vertex::{
     GoogleVertexOptions, base_url_includes_api_version, resolve_api_key,
-    stream as stream_google_vertex,
+    stream_with_transport as stream_google_vertex,
 };
 use pi_core::ai::types::{
     Context, Message, Model, ProviderEnv, ProviderHeaders, ProviderRequestOptions, RoleUser,
@@ -122,7 +122,7 @@ async fn run_vertex(
     let mut options = options;
     options.base.base.fetch = Some(fetch.clone());
 
-    let message = stream_google_vertex(model, &vertex_context(), Some(&options))
+    let message = stream_google_vertex(model, &vertex_context(), Some(&options), None)
         .result()
         .await;
     assert_eq!(message.stop_reason, StopReason::Stop);

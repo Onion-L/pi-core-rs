@@ -794,9 +794,9 @@ async fn invalid_auth_json_is_replaced_like_the_typescript_cli() {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn auth_json_is_written_with_owner_only_permissions() {
-    // Deviation from cli.ts (documented in src/ai/cli.rs): Node's
-    // writeFileSync creates 0644; the Rust port restricts to 0600.
+async fn auth_json_is_written_with_the_default_file_mode() {
+    // Parity with cli.ts: `writeFileSync` without a mode creates the file
+    // with 0666 & ~umask (typically 0644).
     let dir = common::create_temp_dir();
     let io = ScriptIo::new(&[], auth_json(&dir));
     run_with(
@@ -811,5 +811,7 @@ async fn auth_json_is_written_with_owner_only_permissions() {
         .unwrap()
         .permissions()
         .mode();
-    assert_eq!(mode & 0o777, 0o600);
+    let umask = unsafe { libc::umask(0) };
+    unsafe { libc::umask(umask) };
+    assert_eq!(mode & 0o777, 0o666 & !u32::from(umask));
 }

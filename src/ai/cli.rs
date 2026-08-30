@@ -12,9 +12,6 @@
 //! `scripts/oracle/generate-cli-goldens.mts`.
 //!
 //! Known deviations, kept as small as possible:
-//! - `saveAuth` writes `auth.json` with 0600 permissions on unix. Node's
-//!   `writeFileSync` would create 0644; the tighter mode is deliberate and
-//!   only observable via the filesystem, not the CLI output.
 //! - On stdin EOF mid-prompt the readline `question` callback resolves with
 //!   `null` in Node; here [`CliIo::read_line`] yields `None`, which the
 //!   prompt code treats as the empty string. The numeric paths (menu and
@@ -191,28 +188,12 @@ fn load_auth(io: &Arc<dyn CliIo>) -> Map<String, Value> {
 }
 
 /// Port of `saveAuth`: `JSON.stringify(auth, null, 2)` without a trailing
-/// newline, written with 0600 permissions on unix (see module docs).
+/// newline, written with the platform default file mode (`writeFileSync`
+/// without a mode creates 0666 & ~umask, typically 0644).
 fn save_auth(io: &Arc<dyn CliIo>, auth: &Map<String, Value>) -> Result<(), String> {
     let text = serde_json::to_string_pretty(auth).map_err(|error| error.to_string())?;
     let path = io.auth_file_path();
-    #[cfg(unix)]
-    {
-        use std::io::Write;
-        use std::os::unix::fs::OpenOptionsExt;
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(&path)
-            .map_err(|error| error.to_string())?;
-        file.write_all(text.as_bytes())
-            .map_err(|error| error.to_string())?;
-    }
-    #[cfg(not(unix))]
-    {
-        std::fs::write(&path, text.as_bytes()).map_err(|error| error.to_string())?;
-    }
+    std::fs::write(&path, text.as_bytes()).map_err(|error| error.to_string())?;
     Ok(())
 }
 

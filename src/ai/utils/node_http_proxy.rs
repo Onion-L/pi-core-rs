@@ -2,9 +2,10 @@
 //! HTTP proxy resolution for provider requests.
 //!
 //! The TypeScript version produces the proxy URL that a Node HTTP agent
-//! consumes; the Rust port returns the same resolved URL so the transport
-//! layer can construct an equivalent client. `NO_PROXY`/wildcard matching is
-//! ported exactly.
+//! consumes; the Rust port returns the same resolved URL (a `URL` object
+//! whose serialization normalizes an empty path to a trailing slash) so the
+//! transport layer can construct an equivalent client. `NO_PROXY`/wildcard
+//! matching is ported exactly.
 
 use crate::ai::types::ProviderEnv;
 use crate::ai::utils::provider_env::get_provider_env_value;
@@ -110,7 +111,9 @@ pub const UNSUPPORTED_PROXY_PROTOCOL_MESSAGE: &str = "Unsupported proxy protocol
 
 /// Port of `resolveHttpProxyUrlForTarget`: resolves the proxy URL for a
 /// target from the scoped/process environment, or `None` when no proxy
-/// applies. Errors carry the unsupported-protocol message for SOCKS/PAC.
+/// applies. The returned string is the URL serialization (empty paths
+/// normalize to a trailing slash, matching `URL.toString()`). Errors carry
+/// the unsupported-protocol message for SOCKS/PAC.
 pub fn resolve_http_proxy_url_for_target(
     target_url: &str,
     env: Option<&ProviderEnv>,
@@ -129,7 +132,7 @@ pub fn resolve_http_proxy_url_for_target(
         ));
     }
 
-    Ok(Some(proxy))
+    Ok(Some(proxy_url.to_string()))
 }
 
 #[cfg(test)]
@@ -169,7 +172,7 @@ mod tests {
             Some(&env),
         )
         .unwrap();
-        assert_eq!(resolved.as_deref(), Some("http://proxy.example:8080"));
+        assert_eq!(resolved.as_deref(), Some("http://proxy.example:8080/"));
     }
 
     #[test]
@@ -182,7 +185,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             resolved.as_deref(),
-            Some("http://scoped-proxy.example:8080")
+            Some("http://scoped-proxy.example:8080/")
         );
     }
 
@@ -214,13 +217,13 @@ mod tests {
         assert_eq!(resolved, None, "wildcard suffix should bypass the proxy");
         let resolved =
             resolve_http_proxy_url_for_target("https://example.com", Some(&env)).unwrap();
-        assert_eq!(resolved.as_deref(), Some("http://proxy.example:8080"));
+        assert_eq!(resolved.as_deref(), Some("http://proxy.example:8080/"));
     }
 
     #[test]
     fn all_proxy_falls_back_and_defaults_scheme() {
         let env = scoped_env(&[("ALL_PROXY", "proxy.example:3128")]);
         let resolved = resolve_http_proxy_url_for_target("http://example.com", Some(&env)).unwrap();
-        assert_eq!(resolved.as_deref(), Some("http://proxy.example:3128"));
+        assert_eq!(resolved.as_deref(), Some("http://proxy.example:3128/"));
     }
 }
