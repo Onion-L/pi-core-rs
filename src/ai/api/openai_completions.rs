@@ -2095,15 +2095,21 @@ pub fn stream_simple(
         clamp_thinking_level(model, crate::ai::types::ModelThinkingLevel::from(reasoning))
     });
     let reasoning_effort = clamped_reasoning.and_then(|level| level.as_thinking_level());
+    // TS forwards the shared tool choice verbatim (`toolChoice:
+    // options?.toolChoice`); the serialized union matches that pass-through.
+    let tool_choice = options
+        .tool_choice
+        .as_ref()
+        .and_then(|choice| serde_json::to_value(choice).ok());
 
     stream(
         model,
         context,
         Some(&OpenAICompletionsOptions {
             base,
+            tool_choice,
             reasoning_effort,
             thinking_budgets: options.thinking_budgets,
-            ..Default::default()
         }),
     )
 }
@@ -2634,6 +2640,12 @@ fn finish_block(
             if let Some(details) = &scratch.streamed_reasoning_details {
                 thinking.thinking_signature =
                     Some(serde_json::to_string(details).unwrap_or_default());
+                // Port of `applyStreamedReasoningDetails`: the serialized
+                // details must land on the block in `output.content`, not just
+                // the terminal-event copy.
+                if let Some(AssistantContent::Thinking(block)) = output.content.get_mut(position) {
+                    *block = thinking.clone();
+                }
             }
             producer.push(AssistantMessageEvent::ThinkingEnd {
                 content_index,
