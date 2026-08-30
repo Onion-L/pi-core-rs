@@ -7,11 +7,18 @@ Status legend:
 
 - **pending** — not yet ported.
 - **done** — ported with its applicable tests passing.
+- **partial** — the ported surface passes its tests, but a named capability
+  gap remains (the row says exactly what is missing). A partial row must
+  close — by porting the gap or reclassifying it as a documented
+  language/runtime deviation — before the migration is complete.
+- **deferred** — deliberately postponed with the reason recorded in the row;
+  same closure requirement as partial.
 - **live** — the TypeScript suite is credential-gated (env API keys or OAuth
   tokens, same `skipIf` conditions listed in the row); it skips without
   credentials upstream and stays unported here per `AGENTS.md`. Where the
   shared machinery behind it is observable offline, the row names the Rust
-  tests that cover that machinery.
+  tests that cover that machinery. Each live row needs a Rust test entry
+  with the same env gating (tracked work; see the live-entry note below).
 - **exception** — ported with a documented, minimal deviation (the note says
   where the deviation is documented), or deliberately out of scope.
 
@@ -59,21 +66,21 @@ upstream package).
 | `src/api/azure-openai-responses.lazy.ts` | `src/ai/providers/apis.rs` | done |
 | `src/api/azure-openai-responses.ts` | `src/ai/api/azure_openai_responses.rs` | done |
 | `src/api/bedrock-converse-stream.lazy.ts` | `src/ai/providers/apis.rs` | done (direct dispatch adapter; the Bun `setBedrockProviderModule` override has no Rust counterpart) |
-| `src/api/bedrock-converse-stream.ts` | `src/ai/api/bedrock_converse_stream.rs` | done (SigV4 with the documented AWS vector, bearer/skip-auth/static/profile credential resolution, endpoint+region resolution, vnd.amazon.eventstream framing; web-identity (IRSA) and ECS credential fetching are not implemented — the provider reports them configured but the wire layer lacks the STS/container fetch, to be revisited) |
-| `src/api/cloudflare-gateway-binding.ts` | `src/ai/api/cloudflare_gateway_binding.rs` | done (Request/init split and fetch-signal forwarding have no Rust transport equivalent; documented in the module) |
+| `src/api/bedrock-converse-stream.ts` | `src/ai/api/bedrock_converse_stream.rs` | partial (SigV4 with the documented AWS vector, bearer/skip-auth/static/profile credential resolution, endpoint+region resolution, vnd.amazon.eventstream framing are done; the AWS SDK default credential chain's web-identity (IRSA) and ECS container credential fetching are missing — the provider reports them configured but the wire layer lacks the STS `AssumeRoleWithWebIdentity` and ECS container-metadata fetches) |
+| `src/api/cloudflare-gateway-binding.ts` | `src/ai/api/cloudflare_gateway_binding.rs` | partial (Request/init header merging and the binding run are ported; forwarding the resolved abort signal into the transport run — the TS `signal` on `binding.gateway(...).run(...)` — is missing because `HttpFetch` requests carry no signal yet) |
 | `src/api/cloudflare.ts` | `src/ai/api/cloudflare.rs` | done |
 | `src/api/constrained-sampling.ts` | `src/ai/api/constrained_sampling.rs` | done |
 | `src/api/github-copilot-headers.ts` | `src/ai/api/github_copilot_headers.rs` | done |
 | `src/api/google-generative-ai.lazy.ts` | `src/ai/providers/apis.rs` | done |
-| `src/api/google-generative-ai.ts` | `src/ai/api/google_generative_ai.rs` | done |
+| `src/api/google-generative-ai.ts` | `src/ai/api/google_generative_ai.rs` | partial (stream/event mapping, headers, and retry ported; the TypeScript adapter's synchronous rejection of a non-default custom `fetch` (`"Custom fetch is not supported by the Google Generative AI adapter"`) is a no-op check in the port) |
 | `src/api/google-shared.ts` | `src/ai/api/google_shared.rs` | done |
 | `src/api/google-vertex.lazy.ts` | `src/ai/providers/apis.rs` | done |
-| `src/api/google-vertex.ts` | `src/ai/api/google_vertex.rs` | done |
+| `src/api/google-vertex.ts` | `src/ai/api/google_vertex.rs` | partial (stream/event mapping and auth-header resolution ported; the TypeScript adapter's rejection of a non-default custom `fetch` (`"Custom fetch is not supported by the Google Vertex adapter"`) is not implemented at all) |
 | `src/api/lazy.ts` | `src/ai/providers/apis.rs` | done (lazy loading collapses to direct dispatch; the Node module-registry probe in `test/lazy-module-load.test.ts` has no Rust equivalent — disposition recorded with `src/providers/all.ts`) |
 | `src/api/mistral-conversations.lazy.ts` | `src/ai/providers/apis.rs` | done |
 | `src/api/mistral-conversations.ts` | `src/ai/api/mistral_conversations.rs` | done |
 | `src/api/openai-codex-responses.lazy.ts` | `src/ai/providers/apis.rs` | done |
-| `src/api/openai-codex-responses.ts` | `src/ai/api/openai_codex_responses.rs` | done (SSE transport; WebSocket transport + zstd compression deferred, see note) |
+| `src/api/openai-codex-responses.ts` | `src/ai/api/openai_codex_responses.rs` | partial (SSE transport with request shape, URL resolution, retry policy, Codex event mapping, and error taxonomy ported; the WebSocket transport (`responses_websockets=2026-02-06`) with session cache and SSE fallback, and zstd SSE request-body compression are missing) |
 | `src/api/openai-completions.lazy.ts` | `src/ai/providers/apis.rs` | done |
 | `src/api/openai-completions.ts` | `src/ai/api/openai_completions.rs` | done |
 | `src/api/openai-prompt-cache.ts` | `src/ai/api/openai_completions.rs` | done |
@@ -81,7 +88,7 @@ upstream package).
 | `src/api/openai-responses.lazy.ts` | `src/ai/providers/apis.rs` | done |
 | `src/api/openai-responses.ts` | `src/ai/api/openai_responses.rs` | done |
 | `src/api/openrouter-images.lazy.ts` | `src/ai/providers/builtin.rs` | done (direct dispatch adapter) |
-| `src/api/openrouter-images.ts` | `src/ai/api/openrouter_images.rs` | done (transport cannot observe the abort token; a pre-flight cancellation check replaces OpenAI-SDK signal handling) |
+| `src/api/openrouter-images.ts` | `src/ai/api/openrouter_images.rs` | partial (request/response handling, retry, and usage parsing ported; in-flight cancellation is not observed by the transport — only a pre-flight token check replaces the OpenAI-SDK signal wiring) |
 | `src/api/pi-messages.lazy.ts` | `src/ai/providers/apis.rs` | done |
 | `src/api/pi-messages.ts` | `src/ai/api/pi_messages.rs` | done |
 | `src/api/simple-options.ts` | `src/ai/api/simple_options.rs` | done |
@@ -104,7 +111,7 @@ upstream package).
 | `src/auth/types.ts` | `src/ai/auth/types.rs` | done |
 | `src/bedrock-provider.ts` | | exception (Bun static-embed module object; the Rust adapter is `src/ai/providers/apis.rs::bedrock_converse_stream_api`) |
 | `src/bun-oauth.ts` | | exception (Bun binary loader registration; `registerBundledOAuthFlowLoaders` has no Rust counterpart — flows link statically, documented in `src/ai/auth/oauth/load.rs`) |
-| `src/cli.ts` | `src/ai/cli.rs` + `src/bin/pi-ai.rs` | done (tests/ai_cli.rs; golden fixtures from scripts/oracle/generate-cli-goldens.mts; auth.json is 0600 on unix — documented hardening deviation) |
+| `src/cli.ts` | `src/ai/cli.rs` + `src/bin/pi-ai.rs` | partial (tests/ai_cli.rs; golden fixtures from scripts/oracle/generate-cli-goldens.mts; auth.json is written 0600 on unix where `writeFileSync` without a mode creates 0644 via umask — aligning to the TypeScript-observable mode is tracked) |
 | `src/compat.ts` | `src/ai/compat.rs` | done (global api-provider registry, registerFauxProvider, env-key-injected global stream/complete, deprecated catalog reads) |
 | `src/compat/extension-oauth-types.ts` | `src/ai/compat.rs` | done |
 | `src/env-api-keys.ts` | `src/ai/env_api_keys.rs` | done |
@@ -113,7 +120,7 @@ upstream package).
 | `src/images-api-registry.ts` | `src/ai/images.rs` | done (static dispatch; lazy module loading is a compile-time no-op in Rust) |
 | `src/images-models.ts` | `src/ai/images_models.rs` | done |
 | `src/images.ts` | `src/ai/images.rs` | done |
-| `src/index.ts` | `src/agent/mod.rs` | done |
+| `src/index.ts` | `src/ai/mod.rs` | done |
 | `src/legacy-api-aliases.ts` | `src/ai/compat.rs` | done (deprecated per-api stream aliases) |
 | `src/model-catalog.ts` | `src/ai/model_catalog.rs` | done (identity helper; TS generics are compile-time only) |
 | `src/models-store.ts` | `src/ai/models_store.rs` | done (exercised through the models-runtime refresh tests) |
@@ -218,7 +225,7 @@ upstream package).
 | `src/utils/hash.ts` | `src/ai/utils/text.rs (short_hash)` | done |
 | `src/utils/headers.ts` | `src/ai/utils/headers.rs` | done |
 | `src/utils/json-parse.ts` | `src/ai/utils/json_parse.rs` | done |
-| `src/utils/node-http-proxy.ts` | `src/ai/utils/node_http_proxy.rs` | done |
+| `src/utils/node-http-proxy.ts` | `src/ai/utils/node_http_proxy.rs` | partial (env precedence, NO_PROXY matching, and SOCKS/PAC rejection ported; the resolver returns the raw proxy string where TypeScript returns a `URL` whose serialization normalizes an empty path to a trailing slash — the inline tests assert the un-normalized form) |
 | `src/utils/overflow.ts` | `src/ai/utils/overflow.rs` | done |
 | `src/utils/pi-user-agent.ts` | `src/ai/session_resources.rs (get_pi_user_agent)` | done |
 | `src/utils/provider-env.ts` | `src/ai/utils/provider_env.rs` | done |
@@ -267,7 +274,7 @@ upstream package).
 | `test/bedrock-thinking-payload.test.ts` | `tests/ai_bedrock_stream.rs` | done (credentials-gated E2E case skips like the TS `describe.skipIf`; payload captured via onPayload with an aborted signal instead of a thrown capture) |
 | `test/bedrock-utils.ts` | | exception (live-credential helper for the credentials-gated model suite; no offline behavior to port) |
 | `test/cache-retention.test.ts` | `tests/ai_anthropic_payload.rs` + `tests/ai_openai_completions.rs` + `tests/ai_openai_responses.rs` | done (all three describes offline, env cases via scoped ProviderEnv) |
-| `test/cloudflare-gateway-binding.test.ts` | `tests/ai_cloudflare_gateway_binding.rs` | done (Request/signal-specific cases documented as N/A in the test header) |
+| `test/cloudflare-gateway-binding.test.ts` | `tests/ai_cloudflare_gateway_binding.rs` | partial (init-headers merge and Request-input handling ported; the abort-signal forwarding cases (including `signal: null` clearing) need the transport-level signal plumbed through the binding run) |
 | `test/cloudflare-stream.test.ts` | `tests/ai_cloudflare_stream.rs` | done (third case covers the TS `??` placeholder-fallback branch) |
 | `test/cloudflare-utils.ts` |  | exception (live-credential helper for the credentials-gated cloudflare suites, same treatment as `test/bedrock-utils.ts`; no offline behavior to port) |
 | `test/codex-websocket-cached-probe.ts` |  | exception (manual benchmark probe script, not a vitest suite; the websocket transport it measures is outside the SSE-only Rust port) |
@@ -281,7 +288,7 @@ upstream package).
 | `test/env-api-keys.test.ts` | inline in `src/ai/env_api_keys.rs` | done (scoped env injection) |
 | `test/error-body.test.ts` | inline in `src/ai/utils/error_body.rs` | done (representable cases; JS class-instance/pipe-stream/non-Error inputs are unrepresentable — noted N/A in the test module) |
 | `test/faux-provider.test.ts` | `tests/ai_faux_provider.rs` | done (all 23 cases through the compat global API; the TS factory throw becomes `FauxResponseStep::Factory` returning `Err`, whose catch now emits the single error event) |
-| `test/fetch-option.test.ts` | `tests/ai_anthropic_stream.rs`, `tests/ai_sdk_header_parity.rs`, `tests/ai_openrouter_images.rs`, `tests/ai_mistral.rs`, `tests/ai_codex_stream.rs`, `tests/ai_pi_messages.rs` | done (all legs exercise injected transports; the TS Google leg's rejection of custom fetch is the port's accepted injectable-transport deviation, documented in `src/ai/api/google_generative_ai.rs`) |
+| `test/fetch-option.test.ts` | `tests/ai_anthropic_stream.rs`, `tests/ai_sdk_header_parity.rs`, `tests/ai_openrouter_images.rs`, `tests/ai_mistral.rs`, `tests/ai_codex_stream.rs`, `tests/ai_pi_messages.rs` | partial (all legs exercise injected transports; the TS Google legs assert the adapter's rejection of a custom fetch, which the Rust google adapters do not yet implement — tracked with `src/api/google-generative-ai.ts` above) |
 | `test/fireworks-models.test.ts` | `tests/ai_model_catalogs.rs` + `tests/ai_anthropic_payload.rs` | done (catalog cases in the former, x-session-affinity/cache_control/eager payload cases in the latter) |
 | `test/generate-models-strict.test.ts` |  | exception (guards the TS codegen script `scripts/generate-models.ts` itself, same treatment as `test/image-model-data.test.ts`; the generated catalog is committed via `scripts/oracle/export-model-catalog.mts`) |
 | `test/github-copilot-anthropic.test.ts` | `tests/ai_anthropic_payload.rs` | done |
@@ -318,7 +325,7 @@ upstream package).
 | `test/oauth.ts` |  | exception (live-credential test helper reading `~/.pi/agent/auth.json`; the runtime equivalent is `src/ai/auth/resolve.rs` and has no offline behavior to port) |
 | `test/openai-codex-cache-affinity-e2e.test.ts` |  | live (gated on the openai-codex OAuth token) |
 | `test/openai-codex-oauth.test.ts` | `tests/ai_oauth_openai_codex.rs` | done |
-| `test/openai-codex-stream.test.ts` | `tests/ai_codex_stream.rs` | done (the SSE surface; the 11 websocket cases and zstd compression are outside the SSE-only port — documented in the test file header and below) |
+| `test/openai-codex-stream.test.ts` | `tests/ai_codex_stream.rs` | partial (the SSE surface is ported; the 11 websocket cases and the zstd-compression case are listed as unported in the test file header — they land with the WebSocket transport and request compression) |
 | `test/openai-completions-cache-control-format.test.ts` | `tests/ai_openai_completions.rs` | done |
 | `test/openai-completions-empty-tools.test.ts` | `tests/ai_openai_completions.rs` | done |
 | `test/openai-completions-prompt-cache.test.ts` | `tests/ai_openai_completions.rs` | done |
@@ -381,25 +388,43 @@ upstream package).
 
 ### Documented deviations and deferrals
 
-- `src/api/openai-codex-responses.ts` is ported over the SSE transport
-  (request shape, URL resolution, retry policy, Codex event mapping and
-  error taxonomy are 1:1). The optional WebSocket transport
-  (`responses_websockets=2026-02-06` beta) with session cache/SSE fallback,
-  and zstd request-body compression via `node:zlib`, are runtime transport
-  optimizations without a Rust counterpart yet; the SSE path is the
-  protocol-correct fallback the TS adapter also uses.
+Deviation audit (M1): each entry below is either a language/runtime
+difference the port keeps, or an implementable gap tracked as a partial row
+above. No `done` row carries a hidden gap.
+
+Kept language/runtime differences:
 
 - `src/bun-oauth.ts` (Bun credential export) is a runtime entry point for
   the Bun environment; its Bun-specific export has no Rust counterpart.
-  `src/cli.ts` now has a Rust equivalent (`src/ai/cli.rs` +
-  `src/bin/pi-ai.rs`) with the same help/list/login surface; see its row
-  above.
+  `src/cli.ts` has a Rust equivalent (`src/ai/cli.rs` + `src/bin/pi-ai.rs`)
+  with the same help/list/login surface; see its row above.
 - `src/compat.ts` and `src/legacy-api-aliases.ts` are re-export shims over
-  the API implementations; they land with the providers (M3).
+  the API implementations; they land with the providers.
 - `index.ts` public re-exports are mirrored as they land module by module.
-- The HTTP proxy resolver returns the proxy URL string; TypeScript returns a
-  `URL` object (whose `toString` adds a trailing slash). Transport
-  construction consumes the string form.
+- The lazy module adapters collapse to direct dispatch: Rust links
+  statically, so the Node module-registry probe in
+  `test/lazy-module-load.test.ts` and the Bun `setBedrockProviderModule`
+  override have nothing to observe.
+
+Tracked implementable gaps (must close before the migration is complete):
+
+- Codex WebSocket transport (`responses_websockets=2026-02-06`) with the
+  session cache (account-scoped, TTL/age limits, continuation reuse) and
+  SSE fallback, plus zstd request-body compression on the SSE path —
+  `src/api/openai-codex-responses.ts` row.
+- Bedrock web-identity (IRSA) and ECS container credential fetching, i.e.
+  the parts of the AWS SDK default chain the TS adapter delegates to —
+  `src/api/bedrock-converse-stream.ts` row.
+- Abort-signal propagation into the HTTP transport (Cloudflare gateway
+  binding run signal, OpenRouter Images in-flight cancel) — the
+  `src/api/cloudflare-gateway-binding.ts` and `src/api/openrouter-images.ts`
+  rows.
+- auth.json file mode parity (TS `writeFileSync` default vs the port's
+  explicit 0600) — the `src/cli.ts` row.
+- Proxy URL serialization parity (the `URL` toString trailing slash) — the
+  `src/utils/node-http-proxy.ts` row.
+- Google adapters' rejection of custom fetch — the
+  `src/api/google-generative-ai.ts` and `src/api/google-vertex.ts` rows.
 
 ### Additional Rust modules
 
@@ -438,7 +463,7 @@ upstream package).
 | `src/harness/session/memory.ts` | `src/agent/harness/session/memory.rs` | done |
 | `src/harness/session/session.ts` | `src/agent/harness/session/memory.rs (Session)` | done (assertJsonSerializable is enforced by construction; clock seam mirrors Date.now overrides) |
 | `src/harness/session/state.ts` | `src/agent/harness/session/state.rs` | done |
-| `src/harness/session/testing/conformance.ts` | `src/agent/harness/session/testing/mod.rs` | done (representative case per upstream group; fixture/AsyncDisposable collapses to an enum over the in-memory and JSONL backends) |
+| `src/harness/session/testing/conformance.ts` | `src/agent/harness/session/testing/mod.rs` | partial (the conformance harness runs per-backend over the in-memory and JSONL repos, but only a representative subset of the 31 upstream cases is asserted — the remaining entries-and-lanes, records-and-log, queries-and-facts, and validation-and-immutability cases need porting) |
 | `src/harness/session/testing/index.ts` | `src/agent/harness/session/testing/mod.rs` | done |
 | `src/harness/session/testing/types.ts` | `src/agent/harness/session/testing/mod.rs` | done |
 | `src/harness/session/types.ts` | `src/agent/harness/session/types.rs` | done |
@@ -505,21 +530,21 @@ upstream package).
 |---|---|---|
 | `test/harness/agent-harness-scaffold.test.ts` | `tests/harness_agent_harness.rs` | done |
 | `test/harness/branch-summarization.test.ts` | `tests/harness_compaction.rs` | done |
-| `test/harness/compaction.test.ts` | `tests/harness_compaction.rs` | done (offline preparation/cut/token suites plus the faux-provider summary paths; representative cases per upstream group) |
+| `test/harness/compaction.test.ts` | `tests/harness_compaction.rs` | partial (offline preparation/cut/token suites ported; the async faux-provider summary suites — reasoning pass-through, previous summaries/custom instructions in prompts, string-result preservation, failed/aborted error results, maxTokens clamping, error-without-throwing, split-turn usage combining, turn-prefix reasoning/errors, result file details, and the split-turn prior-file-operations preparation — exercise `generateSummary`/compaction run flows that still lack direct Rust tests) |
 | `test/harness/events.test.ts` | `tests/harness_events.rs` | done |
 | `test/harness/nodejs-env.test.ts` | `tests/harness_nodejs_env.rs` | done (platform-faking WSL test and win32-only skipIf cases are documented exceptions) |
-| `test/harness/prompt-templates.test.ts` | `tests/harness_resources.rs` | done |
-| `test/harness/reducer.test.ts` | `tests/harness_reducer.rs` | done (representative cases per upstream group: corruption taxonomy, reduction shapes, tool batches, deferred handling, overflow guard) |
+| `test/harness/prompt-templates.test.ts` | `tests/harness_resources.rs` | partial (loading, substitution, diagnostics, and symlinked-file cases ported; source-info preservation for *sourced prompt templates* is unported — the Rust suite covers it for skills only) |
+| `test/harness/reducer.test.ts` | `tests/harness_reducer.rs` | partial (corruption taxonomy, reduction shapes, tool batches, and the overflow guard are ported; the determinism/no-alias cases, bounded-recovery input immutability, deferred-write tool-batch non-resolution, unfulfilled result ids from earlier attempts, and committed operation-owned configuration after the anchor are unported) |
 | `test/harness/resource-formatting.test.ts` | `tests/harness_resources.rs` | done |
 | `test/harness/session/context.test.ts` | `tests/harness_session.rs` | done |
-| `test/harness/session/jsonl.test.ts` | `tests/harness_session_jsonl.rs` + `tests/harness_session_conformance.rs` | done |
+| `test/harness/session/jsonl.test.ts` | `tests/harness_session_jsonl.rs` + `tests/harness_session_conformance.rs` | partial (backend-specific cases ported; the conformance legs share the gap recorded on `src/harness/session/testing/conformance.ts`) |
 | `test/harness/session/jsonl-codec.test.ts` | `tests/harness_session_jsonl.rs` | done |
 | `test/harness/session/jsonl-storage.test.ts` | `tests/harness_session_jsonl.rs` | done (storage-level repair and fork cases through the NodeExecutionEnv filesystem) |
-| `test/harness/session/memory.test.ts` | `tests/harness_session.rs` + `tests/harness_session_conformance.rs` | done |
-| `test/harness/session/search.test.ts` | `tests/harness_resources.rs` | done |
-| `test/harness/skills.test.ts` | `tests/harness_resources.rs` | done |
+| `test/harness/session/memory.test.ts` | `tests/harness_session.rs` + `tests/harness_session_conformance.rs` | partial (backend-specific cases ported; the conformance legs share the gap recorded on `src/harness/session/testing/conformance.ts`) |
+| `test/harness/session/search.test.ts` | `tests/harness_resources.rs` | partial (in-memory projected-source scanning and entry-type filters ported; labels in memory scanning projections, abort signals in scanning search, and the JSONL-from-disk scanning source are unported) |
+| `test/harness/skills.test.ts` | `tests/harness_resources.rs` | partial (all six cases have Rust counterparts, but the sourced-skills source-info case asserts only the skill name — the full struct including `filePath` and the preserved source needs asserting) |
 | `test/harness/system-prompt.test.ts` | `tests/harness_resources.rs` | done |
 | `test/harness/telemetry.test.ts` | `tests/harness_telemetry.rs` | done (the docs-regeneration case checks the same oracle-rendered payload) |
-| `test/harness/tools.test.ts` | `tests/harness_tools.rs` | done (read/write/edit/bash suites incl. image detection and stub-env late-output; the mutation-queue blocking subclass cases run through wrapper envs) |
+| `test/harness/tools.test.ts` | `tests/harness_tools.rs` | partial (read/write/edit/bash suites incl. image detection and stub-env late-output; unported TS cases: the injected image processor delegation, the mutation-queue lock held until an aborted write/edit settles, edits through symlinks to regular files, and the bash update-coalescing with truncated full-output persistence) |
 | `test/harness/truncate.test.ts` | `tests/harness_truncate.rs` | done |
 | `test/harness/session-test-utils.ts` | `tests/common/mod.rs` | done (afterEach cleanup becomes RAII) |
