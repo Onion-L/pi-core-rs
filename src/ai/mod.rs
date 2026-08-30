@@ -4,6 +4,7 @@
 
 pub mod api;
 pub mod auth;
+pub mod cli;
 pub mod compat;
 pub mod env_api_keys;
 pub mod images;
