@@ -1506,7 +1506,7 @@ async fn capture_oauth_tool_names(tools: &[Tool]) -> Vec<Value> {
         },
         ..Default::default()
     };
-    let _ = stream_anthropic(&model, &tools_context(&tools), Some(&options))
+    let _ = stream_anthropic(&model, &tools_context(tools), Some(&options))
         .result()
         .await;
     body_of(&fetch.request())["tools"]

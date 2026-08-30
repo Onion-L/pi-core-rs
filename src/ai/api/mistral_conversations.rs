@@ -797,11 +797,12 @@ async fn request_mistral_stream(
     Ok(response)
 }
 
-/// Reads all Mistral events from a response body. Port of `readMistralEvents`
-/// + the consume loop; `Err` carries the transport error message. Like the
-/// TypeScript `AbortSignal.timeout(options?.timeoutMs ?? 60_000)` combined
-/// with the caller's signal, the wait for body chunks is bounded by the
-/// request timeout and aborts when the caller cancels.
+/// Reads all Mistral events from a response body: the port of
+/// `readMistralEvents` and its consume loop; `Err` carries the transport
+/// error message. Like the TypeScript `AbortSignal.timeout(options?.
+/// timeoutMs ?? 60_000)` combined with the caller's signal, the wait for
+/// body chunks is bounded by the request timeout and aborts when the caller
+/// cancels (asserted in `tests/ai_mistral.rs`).
 async fn read_mistral_events(
     response: crate::ai::utils::http::HttpResponse,
     timeout_ms: Option<u64>,
