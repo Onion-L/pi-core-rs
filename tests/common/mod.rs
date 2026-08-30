@@ -4,6 +4,9 @@
 //! available for the test binaries that need them.
 #![allow(dead_code)]
 
+/// Shared helpers for the credential-gated live AI suites (`tests/ai_live_*`).
+pub mod live;
+
 use std::ops::Deref;
 
 /// A temp directory removed when the guard drops (per-test, replacing the

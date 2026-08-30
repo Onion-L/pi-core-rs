@@ -14,11 +14,9 @@ Status legend:
 - **deferred** — deliberately postponed with the reason recorded in the row;
   same closure requirement as partial.
 - **live** — the TypeScript suite is credential-gated (env API keys or OAuth
-  tokens, same `skipIf` conditions listed in the row); it skips without
-  credentials upstream and stays unported here per `AGENTS.md`. Where the
-  shared machinery behind it is observable offline, the row names the Rust
-  tests that cover that machinery. Each live row needs a Rust test entry
-  with the same env gating (tracked work; see the live-entry note below).
+  tokens, same `skipIf` conditions listed in the row). The mapped Rust entry
+  uses the same gate, returns successfully without credentials, and performs
+  the real provider request when credentials are available.
 - **exception** — ported with a documented, minimal deviation (the note says
   where the deviation is documented), or deliberately out of scope.
 
@@ -242,49 +240,49 @@ upstream package).
 
 | TypeScript test | Rust test | Status |
 |---|---|---|
-| `test/abort.test.ts` |  | live (all 41 cases gated per provider on env keys or OAuth tokens, mirroring the TS `skipIf`s; the shared abort machinery is covered offline in `tests/ai_faux_provider.rs`) |
+| `test/abort.test.ts` | `tests/ai_live_abort.rs` | live (all 41 cases use the TS provider/model matrix and credential gates) |
 | `test/anthropic-adaptive-thinking-models.test.ts` | `tests/ai_anthropic_payload.rs` | done |
 | `test/anthropic-auth-token.test.ts` | `tests/ai_anthropic_auth_token.rs` | done (SDK-mock cases assert on the captured HTTP request instead of SDK constructor options) |
 | `test/anthropic-cache-write-1h-cost.test.ts` | `tests/ai_anthropic_payload.rs` | done |
 | `test/anthropic-eager-tool-input-compat.test.ts` | `tests/ai_anthropic_payload.rs` | done |
-| `test/anthropic-eager-tool-input-e2e.test.ts` |  | live (per-provider probes gated on env keys/Copilot OAuth like the TS `it.skipIf`; the `covers every generated model` case only checks the TS e2e table's own completeness, and the compat surface it guards is covered offline in `tests/ai_anthropic_payload.rs`) |
+| `test/anthropic-eager-tool-input-e2e.test.ts` | `tests/ai_live_anthropic_features.rs` | live (per-provider probes use the TS env/OAuth gates) |
 | `test/anthropic-empty-thinking-signature-compat.test.ts` | `tests/ai_anthropic_payload.rs` | done |
 | `test/anthropic-force-adaptive-thinking.test.ts` | `tests/ai_anthropic_payload.rs` | done |
-| `test/anthropic-long-cache-retention-e2e.test.ts` |  | live (per-provider probes gated on env keys like the TS `it.skipIf`; the enumeration case only checks the TS e2e table's completeness — the retention payload surface is covered offline in `tests/ai_anthropic_payload.rs`) |
+| `test/anthropic-long-cache-retention-e2e.test.ts` | `tests/ai_live_anthropic_features.rs` | live (per-provider probes use the TS env/OAuth gates) |
 | `test/anthropic-oauth.test.ts` | `tests/ai_oauth_anthropic.rs` | done |
-| `test/anthropic-opus-4-8-smoke.test.ts` |  | live (gated on ANTHROPIC_API_KEY) |
+| `test/anthropic-opus-4-8-smoke.test.ts` | `tests/ai_live_anthropic_features.rs` | live (gated on ANTHROPIC_API_KEY) |
 | `test/anthropic-sse-parsing.test.ts` | `tests/ai_anthropic_stream.rs` | done |
 | `test/anthropic-temperature-compat.test.ts` | `tests/ai_anthropic_payload.rs` | done |
-| `test/anthropic-thinking-disable.test.ts` | `tests/ai_anthropic_payload.rs` | done (offline cases; the trailing E2E describe is gated on ANTHROPIC_API_KEY) |
-| `test/anthropic-tool-name-normalization.test.ts` | `tests/ai_anthropic_payload.rs` | done (TS gates on an Anthropic OAuth token; the mapping is pure name logic, ported offline with an OAuth-shaped key) |
+| `test/anthropic-thinking-disable.test.ts` | `tests/ai_anthropic_payload.rs` + `tests/ai_live_thinking.rs` | done (offline cases plus the gated E2E entry) |
+| `test/anthropic-tool-name-normalization.test.ts` | `tests/ai_anthropic_payload.rs` + `tests/ai_live_anthropic_features.rs` | done (offline mapping plus the Anthropic OAuth-gated E2E entry) |
 | `test/azure-openai-base-url.test.ts` | `tests/ai_azure_responses.rs` | done |
 | `test/azure-openai-responses-reasoning-replay.test.ts` | `tests/ai_azure_responses.rs` | done |
 | `test/azure-openai-tool-choice.test.ts` | `tests/ai_azure_responses.rs` | done |
-| `test/azure-utils.ts` | `tests/ai_azure_responses.rs` | done (deployment-name-map helpers; `hasAzureOpenAICredentials` is TS live-test gating plumbing with no Rust counterpart) |
+| `test/azure-utils.ts` | `tests/ai_azure_responses.rs` + `tests/common/live.rs` | done |
 | `test/baseten-models.test.ts` | `tests/ai_model_catalogs.rs` | done (catalog cases; the chat_template_args payload cases live in `tests/ai_openai_completions.rs`) |
 | `test/bedrock-convert-messages.test.ts` | `tests/ai_bedrock_stream.rs` | done (the two unknown-content-block cases are N/A: Rust's closed content enums cannot carry unknown block types) |
 | `test/bedrock-credentials.test.ts` | inline in `src/ai/api/bedrock_converse_stream.rs` | done (observed on the resolved dispatch config) |
 | `test/bedrock-custom-headers.test.ts` | inline in `src/ai/api/bedrock_converse_stream.rs` | done (middleware apply behavior observed on the outgoing header list; the SDK step/priority/name registration mechanics are N/A) |
 | `test/bedrock-endpoint-resolution.test.ts` | inline in `src/ai/api/bedrock_converse_stream.rs` | done (observed on the resolved dispatch config instead of the SDK constructor) |
 | `test/bedrock-error-metadata.test.ts` | `tests/ai_bedrock_stream.rs` | done |
-| `test/bedrock-models.test.ts` | `tests/ai_bedrock_stream.rs` | done (offline cases; the per-model live suite is credentials-gated upstream and skips identically) |
+| `test/bedrock-models.test.ts` | `tests/ai_bedrock_stream.rs` + `tests/ai_live_bedrock.rs` | done (offline cases plus the gated model matrix) |
 | `test/bedrock-raw-stop-reason.test.ts` | `tests/ai_bedrock_stream.rs` | done |
 | `test/bedrock-redacted-reasoning.test.ts` | `tests/ai_bedrock_stream.rs` | done |
 | `test/bedrock-response-headers.test.ts` | `tests/ai_bedrock_stream.rs` | done (local HTTP server) |
-| `test/bedrock-thinking-payload.test.ts` | `tests/ai_bedrock_stream.rs` | done (credentials-gated E2E case skips like the TS `describe.skipIf`; payload captured via onPayload with an aborted signal instead of a thrown capture) |
-| `test/bedrock-utils.ts` | | exception (live-credential helper for the credentials-gated model suite; no offline behavior to port) |
+| `test/bedrock-thinking-payload.test.ts` | `tests/ai_bedrock_stream.rs` + `tests/ai_live_bedrock.rs` | done (offline payload cases plus the AWS-gated max-token E2E entry) |
+| `test/bedrock-utils.ts` | `tests/common/live.rs` | done (credential gate helper) |
 | `test/cache-retention.test.ts` | `tests/ai_anthropic_payload.rs` + `tests/ai_openai_completions.rs` + `tests/ai_openai_responses.rs` | done (all three describes offline, env cases via scoped ProviderEnv) |
 | `test/cloudflare-gateway-binding.test.ts` | `tests/ai_cloudflare_gateway_binding.rs` | done (init-headers merge, Request-input handling, and abort-signal forwarding; the `signal: null`-clears case is unrepresentable — no `Request`/`init` split) |
 | `test/cloudflare-stream.test.ts` | `tests/ai_cloudflare_stream.rs` | done (third case covers the TS `??` placeholder-fallback branch) |
-| `test/cloudflare-utils.ts` |  | exception (live-credential helper for the credentials-gated cloudflare suites, same treatment as `test/bedrock-utils.ts`; no offline behavior to port) |
+| `test/cloudflare-utils.ts` | `tests/common/live.rs` | done (credential gate helpers) |
 | `test/codex-websocket-cached-probe.ts` |  | exception (manual benchmark probe script, not a vitest suite; the websocket transport it measures is ported — see the adapter row — but the probe itself is a live benchmark with no offline assertions to port) |
 | `test/compat-env.test.ts` | `tests/ai_compat.rs` | done |
 | `test/constrained-sampling.test.ts` | `tests/ai_constrained_sampling.rs` | done |
 | `test/context-estimate.test.ts` | `tests/ai_context_estimate.rs` | done |
-| `test/context-overflow.test.ts` |  | live (35 cases gated per provider on env keys/OAuth, mirroring the TS `skipIf`s) |
-| `test/cross-provider-handoff.test.ts` |  | live (gated on any provider credential via `hasAnyApiKey`) |
+| `test/context-overflow.test.ts` | `tests/ai_live_overflow.rs` | live (35 cases use the TS provider/model matrix and gates) |
+| `test/cross-provider-handoff.test.ts` | `tests/ai_live_cross_provider.rs` | live (gated per fixture using the TS credential resolution) |
 | `test/deferred-tools.test.ts` | `tests/ai_deferred_tools.rs` | done |
-| `test/empty.test.ts` |  | live (120 cases gated per provider on env keys/OAuth, mirroring the TS `skipIf`s) |
+| `test/empty.test.ts` | `tests/ai_live_empty.rs` | live (120 cases use the TS provider/model matrix and gates) |
 | `test/env-api-keys.test.ts` | inline in `src/ai/env_api_keys.rs` | done (scoped env injection) |
 | `test/error-body.test.ts` | inline in `src/ai/utils/error_body.rs` | done (representable cases; JS class-instance/pipe-stream/non-Error inputs are unrepresentable — noted N/A in the test module) |
 | `test/faux-provider.test.ts` | `tests/ai_faux_provider.rs` | done (all 23 cases through the compat global API; the TS factory throw becomes `FauxResponseStep::Factory` returning `Err`, whose catch now emits the single error event) |
@@ -299,15 +297,15 @@ upstream package).
 | `test/google-shared-image-tool-result-routing.test.ts` | `tests/ai_google_shared.rs` | done |
 | `test/google-shared-retry.test.ts` | `tests/ai_google_stream.rs` | done (via `retry_provider_request`, the port of the shared retry helper) |
 | `test/google-shared-signed-empty-blocks.test.ts` | `tests/ai_google_shared.rs` | done |
-| `test/google-thinking-disable.test.ts` |  | live (all cases are E2E streams gated on ANTHROPIC/GEMINI/Vertex/OpenAI/OpenRouter credentials) |
+| `test/google-thinking-disable.test.ts` | `tests/ai_live_thinking.rs` | live (same Anthropic/Gemini/Vertex/OpenAI/OpenRouter gates) |
 | `test/google-thinking-level-map.test.ts` | `tests/ai_google_shared.rs` | done |
 | `test/google-thinking-signature.test.ts` | `tests/ai_google_shared.rs` | done |
 | `test/google-vertex-api-key-resolution.test.ts` | `tests/ai_google_vertex.rs` | done (asserted on the resolved dispatch and the public resolvers) |
 | `test/image-model-data.test.ts` | | n/a — tests the TS oracle generator script (`scripts/generate-image-models.ts`); the generated catalog it produces is committed via `scripts/oracle/export-model-catalog.mts` |
-| `test/image-tool-result.test.ts` |  | live (42 cases gated per provider on env keys/OAuth; 4 further cases are upstream `it.skip`) |
+| `test/image-tool-result.test.ts` | `tests/ai_live_tool_calls.rs` | live (42 active cases use the TS matrix; 4 upstream `it.skip` cases remain skipped) |
 | `test/images-models.test.ts` | `tests/ai_images_models.rs` (+ `tests/ai_providers.rs` for the builtinImagesModels case) | done |
-| `test/images.test.ts` |  | live (E2E gated on OPENROUTER_API_KEY; offline surface covered by `tests/ai_openrouter_images.rs`) |
-| `test/interleaved-thinking.test.ts` |  | live (gated on Bedrock credentials and Anthropic credentials; offline payload analogs in `tests/ai_bedrock_stream.rs`/`tests/ai_anthropic_payload.rs`) |
+| `test/images.test.ts` | `tests/ai_live_images.rs` | live (gated on OPENROUTER_API_KEY) |
+| `test/interleaved-thinking.test.ts` | `tests/ai_live_anthropic_features.rs` | live (gated on Bedrock and Anthropic credentials) |
 | `test/kimi-coding-oauth.test.ts` | `tests/ai_oauth_kimi_coding.rs` | done |
 | `test/lax-message-content.test.ts` |  | exception (Rust's closed `Message` content types cannot represent null/missing content — the laxness the TS test pins is enforced by the type system; see the same class of note in `tests/harness_truncate.rs`) |
 | `test/lazy-module-load.test.ts` | | exception (Node module-registry probe asserting SDK imports stay lazy under bundlers; Rust links statically so there is no lazy loading to observe — see `src/ai/providers/apis.rs`) |
@@ -322,8 +320,8 @@ upstream package).
 | `test/node-http-proxy.test.ts` | inline in `src/ai/utils/node_http_proxy.rs` | done (scoped env; reqwest client construction replaces the undici agent) |
 | `test/oauth-auth.test.ts` | `tests/ai_oauth_auth.rs` | done (Models.getAuth lazy-chain cases included; module-barrel introspection is a TypeScript namespace concern) |
 | `test/oauth-device-code.test.ts` | `tests/ai_oauth_device_code.rs` | done |
-| `test/oauth.ts` |  | exception (live-credential test helper reading `~/.pi/agent/auth.json`; the runtime equivalent is `src/ai/auth/resolve.rs` and has no offline behavior to port) |
-| `test/openai-codex-cache-affinity-e2e.test.ts` |  | live (gated on the openai-codex OAuth token) |
+| `test/oauth.ts` | `tests/common/live.rs` | done (auth.json API-key/OAuth resolution and refresh helper) |
+| `test/openai-codex-cache-affinity-e2e.test.ts` | `tests/ai_live_cache.rs` | live (gated on the openai-codex OAuth token) |
 | `test/openai-codex-oauth.test.ts` | `tests/ai_oauth_openai_codex.rs` | done |
 | `test/openai-codex-stream.test.ts` | `tests/ai_codex_stream.rs` | done (SSE, websocket, and zstd cases; the websocket tests inject mock sockets through the WebSocket factory and serialize on a shared lock, real 50ms windows replace `vi.useFakeTimers`, and the age-limit case overrides the cache clock in place of `vi.setSystemTime`) |
 | `test/openai-completions-cache-control-format.test.ts` | `tests/ai_openai_completions.rs` | done |
@@ -337,18 +335,18 @@ upstream package).
 | `test/openai-completions-thinking-token-budget.test.ts` | `tests/ai_openai_completions.rs` | done |
 | `test/openai-completions-tool-choice.test.ts` | `tests/ai_openai_completions.rs` + `tests/ai_openai_completions_replay.rs` | done (payload/options cases in the former, stream/replay cases in the latter) |
 | `test/openai-completions-tool-result-images.test.ts` | `tests/ai_openai_completions_replay.rs` | done |
-| `test/openai-responses-cache-affinity-e2e.test.ts` |  | live (gated on OPENAI_API_KEY) |
+| `test/openai-responses-cache-affinity-e2e.test.ts` | `tests/ai_live_cache.rs` | live (gated on OPENAI_API_KEY) |
 | `test/openai-responses-compat.test.ts` | `tests/ai_openai_responses.rs` | done |
 | `test/openai-responses-empty-tool-result.test.ts` | `tests/ai_openai_responses.rs` | done |
 | `test/openai-responses-foreign-toolcall-id.test.ts` | `tests/ai_openai_responses.rs` | done |
 | `test/openai-responses-message-id.test.ts` | `tests/ai_openai_responses.rs` | done |
 | `test/openai-responses-namespace.test.ts` | `tests/ai_openai_responses.rs` | done |
 | `test/openai-responses-partial-json-cleanup.test.ts` | `tests/ai_openai_responses.rs` | done |
-| `test/openai-responses-reasoning-replay-e2e.test.ts` |  | live (gated on OPENAI_API_KEY and ANTHROPIC_API_KEY) |
+| `test/openai-responses-reasoning-replay-e2e.test.ts` | `tests/ai_live_reasoning_replay.rs` | live (gated on OPENAI_API_KEY and ANTHROPIC_API_KEY) |
 | `test/openai-responses-terminal-event.test.ts` | `tests/ai_openai_responses.rs` | done |
-| `test/openai-responses-tool-result-images.test.ts` |  | live (4 cases gated on OPENAI_API_KEY, Azure credentials, Copilot OAuth, and Codex OAuth) |
+| `test/openai-responses-tool-result-images.test.ts` | `tests/ai_live_responses_tools.rs` | live (same OpenAI/Azure/Copilot/Codex gates) |
 | `test/openrouter-cache-control-models.test.ts` | `tests/ai_model_catalogs.rs` | done |
-| `test/openrouter-cache-write-repro.test.ts` |  | live (gated on OPENROUTER_API_KEY) |
+| `test/openrouter-cache-write-repro.test.ts` | `tests/ai_live_cache.rs` | live (gated on OPENROUTER_API_KEY) |
 | `test/openrouter-images.test.ts` | `tests/ai_openrouter_images.rs` | done (mock at the `HttpFetch` transport replaces the OpenAI-SDK mock) |
 | `test/openrouter-oauth.test.ts` | `tests/ai_oauth_openrouter.rs` | done |
 | `test/openrouter-reasoning-options.test.ts` | `tests/ai_openai_completions.rs` | done (the three streamSimple payload cases; the `getOpenRouterThinkingLevelMap` cases test the TS codegen script and follow the `generate-models-strict` exception) |
@@ -361,30 +359,30 @@ upstream package).
 | `test/qwen-token-plan-models.test.ts` | `tests/ai_qwen_token_plan.rs` | done |
 | `test/radius-oauth.test.ts` | `tests/ai_oauth_radius.rs` | done |
 | `test/reasoning-options.test.ts` |  | exception (tests the TS codegen script `scripts/models-dev-reasoning-options.ts`; its generated output ships through the committed catalog) |
-| `test/responseid.test.ts` |  | live (11 cases gated per provider on env keys/OAuth) |
+| `test/responseid.test.ts` | `tests/ai_live_responseid.rs` | live (11 cases use the TS provider/model matrix and gates) |
 | `test/retry.test.ts` | `tests/ai_retry.rs` | done |
 | `test/sampling-options.test.ts` | `tests/ai_openai_completions.rs` | done |
 | `test/scratch.ts` | | exception: scratch file, not a test |
-| `test/stream.test.ts` |  | live (233 cases gated per provider on env keys/OAuth; the shared stream/tool/thinking/multi-turn machinery is covered offline in `tests/ai_faux_provider.rs` and `tests/agent_e2e.rs`) |
+| `test/stream.test.ts` | `tests/ai_live_stream.rs` | live (233 cases use the TS provider/model matrix and gates) |
 | `test/supports-xhigh.test.ts` | `tests/ai_supports_xhigh.rs` | done |
 | `test/telemetry-options.test.ts` | `tests/ai_telemetry_options.rs` | done |
 | `test/text.test.ts` | inline in `src/ai/utils/text.rs` | done |
 | `test/together-models.test.ts` | `tests/ai_model_catalogs.rs` | done |
-| `test/tokens.test.ts` |  | live (26 cases gated per provider on env keys/OAuth; 4 Xiaomi cases are upstream `it.skip`) |
-| `test/tool-call-id-normalization.test.ts` |  | live (4 handoff/prefill cases gated on Copilot/OpenRouter/Codex OAuth tokens) |
-| `test/tool-call-without-result.test.ts` |  | live (30 cases gated per provider on env keys/OAuth; the orphaned-tool-call synthetic-result logic is covered offline in `tests/ai_transform_messages.rs`) |
-| `test/total-tokens.test.ts` |  | live (35 cases gated per provider on env keys/OAuth) |
+| `test/tokens.test.ts` | `tests/ai_live_tokens.rs` | live (26 active cases use the TS matrix; 4 Xiaomi cases remain upstream-skipped) |
+| `test/tool-call-id-normalization.test.ts` | `tests/ai_live_tool_call_ids.rs` | live (same Copilot/OpenRouter/Codex credential gates) |
+| `test/tool-call-without-result.test.ts` | `tests/ai_live_tool_calls.rs` | live (30 cases use the TS provider/model matrix and gates) |
+| `test/total-tokens.test.ts` | `tests/ai_live_tokens.rs` | live (35 cases use the TS provider/model matrix and gates) |
 | `test/transform-messages-copilot-openai-to-anthropic.test.ts` | `tests/ai_transform_messages.rs` | done |
-| `test/unicode-surrogate.test.ts` |  | live (87 cases gated per provider on env keys/OAuth; unpaired surrogates are unrepresentable in a Rust `String` — the sanitizer is an identity function there, the same class of note as `tests/harness_truncate.rs`) |
+| `test/unicode-surrogate.test.ts` | `tests/ai_live_surrogates.rs` | live (87 cases use the TS matrix; unpaired surrogates remain unrepresentable in Rust `String`) |
 | `test/uuid.test.ts` | inline in `src/ai/utils/uuid.rs` | done |
 | `test/validation.test.ts` | `tests/ai_validation.rs` | done (the Function-constructor CSP case has no Rust analog) |
 | `test/xai-oauth.test.ts` | `tests/ai_oauth_xai.rs` | done |
 | `test/xai-responses.test.ts` | `tests/ai_xai_responses.rs` | done |
-| `test/xhigh.test.ts` |  | live (3 cases gated on OPENAI_API_KEY) |
+| `test/xhigh.test.ts` | `tests/ai_live_thinking.rs` | live (3 cases gated on OPENAI_API_KEY) |
 | `test/xiaomi-models.test.ts` | `tests/ai_model_catalogs.rs` | done |
-| `test/xiaomi-token-plan-ams-anthropic-empty-signature-smoke.test.ts` |  | live (gated on XIAOMI_TOKEN_PLAN_AMS_API_KEY; the allowEmptySignature behavior it probes is covered offline in `tests/ai_anthropic_payload.rs`) |
+| `test/xiaomi-token-plan-ams-anthropic-empty-signature-smoke.test.ts` | `tests/ai_live_anthropic_features.rs` | live (gated on XIAOMI_TOKEN_PLAN_AMS_API_KEY) |
 | `test/zai-coding-plan-models.test.ts` | `tests/ai_model_catalogs.rs` | done |
-| `test/zen.test.ts` |  | live (per-model smoke cases gated on OPENCODE_API_KEY) |
+| `test/zen.test.ts` | `tests/ai_live_zen.rs` | live (per-model smoke cases gated on OPENCODE_API_KEY) |
 
 ### Documented deviations and deferrals
 
