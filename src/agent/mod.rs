@@ -8,6 +8,7 @@
 pub mod agent;
 pub mod agent_loop;
 pub mod harness;
+pub mod node;
 pub mod proxy;
 pub mod search;
 pub mod stream_fn;
