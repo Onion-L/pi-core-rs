@@ -574,11 +574,9 @@ async fn run_stream(
     );
     let mut payload = json!({
         "model": model.id,
-        "context": {
-            "systemPrompt": context.system_prompt,
-            "messages": context.messages,
-            "tools": context.tools,
-        },
+        // The context is embedded verbatim (TS spreads the `Context` object in,
+        // whose `JSON.stringify` skips `undefined` fields).
+        "context": context,
         "options": {
             "temperature": options.and_then(|options| options.base.temperature),
             "maxTokens": options.and_then(|options| options.base.max_tokens),
@@ -595,6 +593,11 @@ async fn run_stream(
             "toolChoice": options.and_then(|options| options.tool_choice.clone()),
         },
     });
+    // TS `JSON.stringify` omits `undefined` option fields; the Rust JSON
+    // literal materializes unset ones as null, so they are dropped here.
+    if let Some(options) = payload.get_mut("options").and_then(Value::as_object_mut) {
+        options.retain(|_, value| !value.is_null());
+    }
     if let Some(on_payload) = options.and_then(|options| options.base.base.on_payload.as_ref())
         && let Some(next_payload) = on_payload(payload.clone(), model).await
     {
@@ -648,8 +651,15 @@ async fn run_stream(
 
     if !(200..300).contains(&status) {
         let body = crate::ai::utils::http::collect_text(response).await;
+        // TS reads `response.statusText`; the HTTP response carries only the
+        // numeric status, so the canonical reason phrase stands in (the
+        // Node/undici default for a missing reason phrase).
+        let status_text = reqwest::StatusCode::from_u16(status)
+            .ok()
+            .and_then(|status| status.canonical_reason())
+            .unwrap_or_default();
         let (message, code, details) =
-            create_pi_messages_response_error(model, &url, status, "", &body);
+            create_pi_messages_response_error(model, &url, status, status_text, &body);
         return Err(StreamFailure {
             message,
             code,
@@ -676,21 +686,34 @@ async fn run_stream(
     )))
 }
 
-/// Port of `streamSimple`.
+/// Port of `streamSimple`: forwards the shared `toolChoice`/`reasoning` and
+/// the `debug` flag attached to the options object (TS casts
+/// `options as PiMessagesOptions` to read `debug`; Rust callers carry it in
+/// the request options' `extra` map).
 pub fn stream_simple(
     model: &Model,
     context: &Context,
     options: Option<&SimpleStreamOptions>,
 ) -> AssistantMessageEventStream {
     let options = options.cloned().unwrap_or_default();
+    let tool_choice = options
+        .tool_choice
+        .as_ref()
+        .and_then(|choice| serde_json::to_value(choice).ok());
+    let debug = options
+        .base
+        .base
+        .extra
+        .get("debug")
+        .and_then(Value::as_bool);
     stream(
         model,
         context,
         Some(&PiMessagesOptions {
             base: options.base,
             reasoning: options.reasoning,
-            tool_choice: None,
-            debug: None,
+            tool_choice,
+            debug,
         }),
     )
 }
