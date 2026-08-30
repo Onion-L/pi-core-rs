@@ -707,3 +707,199 @@ fn records_usage_cause_payloads_survive_reduction() {
     let result = reduce_lane_state(reduction(vec![started], records, Vec::new())).unwrap();
     assert!(result.lane_state.operation.is_some() || result.lane_state.pending_next_run.is_empty());
 }
+
+fn clone_input(input: &LaneReductionInput) -> LaneReductionInput {
+    LaneReductionInput {
+        lane: input.lane.clone(),
+        open_operations: input.open_operations.clone(),
+        records: input.records.clone(),
+        entries: input.entries.clone(),
+        leaf_id: input.leaf_id.clone(),
+        own_entries: input.own_entries.clone(),
+        configuration_entries: input.configuration_entries.clone(),
+        defaults: defaults(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The remaining reducer.test.ts cases (determinism, input immutability,
+// configuration anchoring, and deferred-write tool batches).
+
+#[test]
+fn applies_committed_operation_owned_configuration_after_the_anchor() {
+    let assistant = persisted(
+        {
+            let mut entry = message_entry(
+                "assistant-config",
+                AgentMessage::Assistant(Box::new(pi_core::ai::types::AssistantMessage {
+                    role: RoleAssistant,
+                    content: vec![text_content("response")],
+                    api: "openai-responses".to_string(),
+                    provider: "response-provider".to_string(),
+                    model: "response-model".to_string(),
+                    usage: usage(),
+                    stop_reason: StopReason::Stop,
+                    timestamp: 1,
+                    ..Default::default()
+                })),
+            );
+            if let Entry::Message { parent_id, .. } = &mut entry {
+                *parent_id = None;
+            }
+            entry
+        },
+        2,
+    );
+    let tools = Entry::ActiveToolsChange {
+        id: "operation-tools".to_string(),
+        active_tool_names: vec!["operation-tool".to_string()],
+        parent_id: Some("assistant-config".to_string()),
+        seq: 3,
+        timestamp: 3,
+    };
+
+    let start = run_started(1, Vec::new());
+    let result = reduce_lane_state(reduction(
+        vec![start.clone()],
+        vec![start],
+        vec![assistant, tools],
+    ))
+    .unwrap();
+
+    assert_eq!(
+        result.effective_configuration,
+        EffectiveLaneConfiguration {
+            model: EffectiveModel {
+                provider: "response-provider".to_string(),
+                model_id: "response-model".to_string(),
+            },
+            thinking_level: "off".to_string(),
+            active_tool_names: vec!["operation-tool".to_string()],
+        }
+    );
+}
+
+#[test]
+fn does_not_mutate_its_bounded_recovery_inputs() {
+    let target = {
+        let mut entry = message_entry("prompt-1", user_message("hello"));
+        if let Entry::Message { terminate, .. } = &mut entry {
+            *terminate = None;
+        }
+        entry
+    };
+    let start = run_started(1, vec![target.clone()]);
+    let entry = persisted(target, 2);
+    let input = RecordLogSlice {
+        lane: "main".to_string(),
+        open_operations: vec![start.clone()],
+        records: vec![start.clone()],
+        entries: vec![entry.clone()],
+    };
+    let records_before = input.records.clone();
+    let entries_before = input.entries.clone();
+
+    assert!(validate_record_log(&input).is_ok());
+    assert_eq!(input.records, records_before);
+    assert_eq!(input.entries, entries_before);
+}
+
+#[test]
+fn ignores_unfulfilled_result_ids_from_earlier_attempts() {
+    let target = message_entry(
+        "attempt-2-result",
+        assistant_message(vec![text_content("done")], StopReason::Stop),
+    );
+    let start = run_started(1, Vec::new());
+    let result = reduce_lane_state(reduction(
+        vec![start.clone()],
+        vec![
+            start,
+            step_attempt(2, "run-1", "assistant", 1, "attempt-1-result"),
+            step_attempt(3, "run-1", "assistant", 2, "attempt-2-result"),
+        ],
+        vec![persisted(target, 4)],
+    ))
+    .unwrap();
+
+    assert!(result.lane_state.operation.unwrap().step.is_none());
+}
+
+#[test]
+fn does_not_resolve_a_tool_batch_from_a_deferred_write_tool_result() {
+    let assistant_target = message_entry(
+        "assistant-tools",
+        assistant_message(vec![tool_call("call-1", "tool-1")], StopReason::ToolUse),
+    );
+    let assistant = persisted(assistant_target, 3);
+    let written_result = message_entry(
+        "written-tool-result",
+        tool_result_message("call-1", "tool-1"),
+    );
+    let start = run_started(1, Vec::new());
+    let write_deferred = LaneRecord::WriteDeferred {
+        id: "write-4".to_string(),
+        lane: "main".to_string(),
+        run_id: "run-1".to_string(),
+        target: written_result.clone(),
+        seq: 4,
+        timestamp: 4,
+    };
+    let persisted_result = {
+        let mut entry = persisted(written_result, 5);
+        if let Entry::Message { parent_id, .. } = &mut entry {
+            *parent_id = Some("assistant-tools".to_string());
+        }
+        entry
+    };
+
+    let result = reduce_lane_state(reduction(
+        vec![start.clone()],
+        vec![
+            start,
+            step_attempt(2, "run-1", "assistant", 1, "assistant-tools"),
+            write_deferred,
+        ],
+        vec![assistant, persisted_result],
+    ))
+    .unwrap();
+
+    let operation = result.lane_state.operation.unwrap();
+    let batch = operation.tool_batch.expect("tool batch");
+    assert!(!batch.calls[0].result_exists);
+    assert!(batch.unresolved);
+}
+
+#[test]
+fn is_deterministic_and_does_not_mutate_or_alias_its_inputs() {
+    let pending = message_entry("next", user_message("next"));
+    let start = queue_enqueued(1, "nextRun", None, pending.clone());
+    let input = reduction(Vec::new(), vec![start.clone()], Vec::new());
+    let before = clone_input(&input);
+
+    let first = reduce_lane_state(clone_input(&input)).unwrap();
+    let second = reduce_lane_state(clone_input(&input)).unwrap();
+
+    assert_eq!(
+        first.lane_state.pending_next_run, second.lane_state.pending_next_run,
+        "repeated reductions agree"
+    );
+    assert_eq!(input.records, before.records, "input records unchanged");
+    // Mutating the output must not leak into the input (no aliasing).
+    let mut first = first;
+    if let Some(Entry::Message { id, .. }) = first.lane_state.pending_next_run.first_mut() {
+        *id = "mutated-output".to_string();
+    }
+    match &input.records[0] {
+        LaneRecord::QueueEnqueued { target, .. } => {
+            assert_eq!(
+                match target {
+                    Entry::Message { id, .. } => id,
+                    _ => "unexpected entry",
+                },
+                "next"
+            );
+        }
+        other => panic!("unexpected record {other:?}"),
+    }
+}

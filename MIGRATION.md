@@ -525,7 +525,7 @@ harness test gaps)
 | `test/harness/events.test.ts` | `tests/harness_events.rs` | done |
 | `test/harness/nodejs-env.test.ts` | `tests/harness_nodejs_env.rs` | done (platform-faking WSL test and win32-only skipIf cases are documented exceptions) |
 | `test/harness/prompt-templates.test.ts` | `tests/harness_resources.rs` | partial (loading, substitution, diagnostics, and symlinked-file cases ported; source-info preservation for *sourced prompt templates* is unported — the Rust suite covers it for skills only) |
-| `test/harness/reducer.test.ts` | `tests/harness_reducer.rs` | partial (corruption taxonomy, reduction shapes, tool batches, and the overflow guard are ported; the determinism/no-alias cases, bounded-recovery input immutability, deferred-write tool-batch non-resolution, unfulfilled result ids from earlier attempts, and committed operation-owned configuration after the anchor are unported) |
+| `test/harness/reducer.test.ts` | `tests/harness_reducer.rs` | done (corruption taxonomy, reduction shapes, tool batches, the overflow guard, committed operation-owned configuration after the anchor, bounded-recovery input immutability, deferred-write tool-batch non-resolution, unfulfilled result ids from earlier attempts, and the determinism/no-alias cases; the Object.freeze checks become clone-compare assertions) |
 | `test/harness/resource-formatting.test.ts` | `tests/harness_resources.rs` | done |
 | `test/harness/session/context.test.ts` | `tests/harness_session.rs` | done |
 | `test/harness/session/jsonl.test.ts` | `tests/harness_session_jsonl.rs` + `tests/harness_session_conformance.rs` | partial (backend-specific cases ported; the conformance legs share the gap recorded on `src/harness/session/testing/conformance.ts`) |
