@@ -55,7 +55,7 @@ const GCP_VERTEX_CREDENTIALS_MARKER: &str = "gcp-vertex-credentials";
 static TOOL_CALL_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Port of `resolveApiKey`: ignores placeholder/marker keys.
-fn resolve_api_key(options: Option<&GoogleVertexOptions>) -> Option<String> {
+pub fn resolve_api_key(options: Option<&GoogleVertexOptions>) -> Option<String> {
     let api_key = options
         .and_then(|options| options.base.base.api_key.as_deref())
         .map(str::trim)?;
@@ -69,7 +69,11 @@ fn resolve_api_key(options: Option<&GoogleVertexOptions>) -> Option<String> {
 }
 
 fn is_placeholder_api_key(api_key: &str) -> bool {
-    api_key.starts_with('<') && api_key.ends_with('>') && api_key.len() >= 2
+    // Port of /^<[^>]+>$/: angle brackets around one or more non-'>' chars.
+    api_key
+        .strip_prefix('<')
+        .and_then(|rest| rest.strip_suffix('>'))
+        .is_some_and(|inner| !inner.is_empty() && !inner.contains('>'))
 }
 
 /// Port of `resolveProject`.
@@ -108,7 +112,7 @@ fn resolve_custom_base_url(base_url: &str) -> Option<String> {
 
 /// Port of `baseUrlIncludesApiVersion`: any path segment matching
 /// `^v\d+(?:beta\d*)?$`.
-fn base_url_includes_api_version(base_url: &str) -> bool {
+pub fn base_url_includes_api_version(base_url: &str) -> bool {
     if let Ok(url) = url::Url::parse(base_url) {
         return url
             .path_segments()
@@ -351,25 +355,37 @@ fn build_request(
     options_headers: Option<&ProviderHeaders>,
     params: Value,
 ) -> Result<HttpRequest, String> {
-    let mut headers: Vec<(String, String)> = vec![(
+    // The SDK merges the default User-Agent with model/request headers into a
+    // single record (`providerHeadersToRecord`); later sources override and
+    // null-valued request headers suppress a default entirely.
+    let mut header_map: std::collections::BTreeMap<String, String> =
+        std::collections::BTreeMap::new();
+    header_map.insert(
         "User-Agent".to_string(),
         crate::ai::session_resources::get_pi_user_agent(),
-    )];
-    if let Some(api_key) = api_key {
-        headers.push(("x-goog-api-key".to_string(), api_key.to_string()));
-    }
+    );
     if let Some(model_headers) = &model.headers {
         for (name, value) in model_headers {
-            headers.push((name.clone(), value.clone()));
+            header_map.insert(name.clone(), value.clone());
         }
     }
     if let Some(options_headers) = options_headers {
         for (name, value) in options_headers {
-            if let Some(value) = value {
-                headers.push((name.clone(), value.clone()));
+            match value {
+                Some(value) => {
+                    header_map.insert(name.clone(), value.clone());
+                }
+                None => {
+                    header_map.remove(name);
+                }
             }
         }
     }
+    let mut headers: Vec<(String, String)> = Vec::new();
+    if let Some(api_key) = api_key {
+        headers.push(("x-goog-api-key".to_string(), api_key.to_string()));
+    }
+    headers.extend(header_map);
 
     let custom_base = resolve_custom_base_url(&model.base_url);
     let version_included = custom_base
@@ -380,20 +396,9 @@ fn build_request(
     let (url, effective_location) = match &custom_base {
         Some(base) => {
             // COLLECTION resource scope: the base URL replaces the
-            // https://{location}-aiplatform.googleapis.com host.
+            // https://{location}-aiplatform.googleapis.com host. The apiVersion
+            // is appended unless the base URL already includes one.
             let trimmed = base.trim_end_matches('/');
-            (
-                format!(
-                    "{trimmed}/models/{}:streamGenerateContent?alt=sse",
-                    model.id
-                ),
-                None::<String>,
-            )
-        }
-        None => {
-            let location = location.ok_or_else(|| {
-                "Vertex AI requires a location. Set GOOGLE_CLOUD_LOCATION or pass location in options.".to_string()
-            })?;
             let version = if api_version.is_empty() {
                 String::new()
             } else {
@@ -401,11 +406,41 @@ fn build_request(
             };
             (
                 format!(
-                    "https://{location}-aiplatform.googleapis.com/{version}publishers/google/models/{}:streamGenerateContent?alt=sse",
+                    "{trimmed}/{version}publishers/google/models/{}:streamGenerateContent?alt=sse",
                     model.id
                 ),
-                Some(location.to_string()),
+                None::<String>,
             )
+        }
+        None => {
+            let version = if api_version.is_empty() {
+                String::new()
+            } else {
+                format!("{api_version}/")
+            };
+            match api_key {
+                // Vertex Express: API-key clients use the global endpoint,
+                // not a location-prefixed regional one.
+                Some(_) => (
+                    format!(
+                        "https://aiplatform.googleapis.com/{version}publishers/google/models/{}:streamGenerateContent?alt=sse",
+                        model.id
+                    ),
+                    None::<String>,
+                ),
+                None => {
+                    let location = location.ok_or_else(|| {
+                        "Vertex AI requires a location. Set GOOGLE_CLOUD_LOCATION or pass location in options.".to_string()
+                    })?;
+                    (
+                        format!(
+                            "https://{location}-aiplatform.googleapis.com/{version}publishers/google/models/{}:streamGenerateContent?alt=sse",
+                            model.id
+                        ),
+                        Some(location.to_string()),
+                    )
+                }
+            }
         }
     };
     let _ = effective_location;

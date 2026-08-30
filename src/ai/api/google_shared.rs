@@ -47,18 +47,32 @@ pub fn resolve_google_thinking_level(
             ModelThinkingLevel::Off => unreachable!("off handled above"),
         },
     };
+    let level_name = model_thinking_level_name(level);
     match resolved_level.as_str() {
         "minimal" => Ok(ThinkingLevel::Minimal),
         "low" => Ok(ThinkingLevel::Low),
         "medium" => Ok(ThinkingLevel::Medium),
         "high" => Ok(ThinkingLevel::High),
         _ => Err(format!(
-            "Unsupported Google thinking level mapping for {}/{}: {:?} -> {}",
+            "Unsupported Google thinking level mapping for {}/{}: {} -> {}",
             model.provider,
             model.id,
-            level,
-            mapped.unwrap_or_default()
+            level_name,
+            mapped.as_deref().unwrap_or("undefined")
         )),
+    }
+}
+
+/// The TypeScript level strings used in the unsupported-mapping message.
+fn model_thinking_level_name(level: ModelThinkingLevel) -> &'static str {
+    match level {
+        ModelThinkingLevel::Off => "off",
+        ModelThinkingLevel::Minimal => "minimal",
+        ModelThinkingLevel::Low => "low",
+        ModelThinkingLevel::Medium => "medium",
+        ModelThinkingLevel::High => "high",
+        ModelThinkingLevel::Xhigh => "xhigh",
+        ModelThinkingLevel::Max => "max",
     }
 }
 
@@ -497,9 +511,15 @@ pub fn resolve_google_function_calling_mode(
     tool_choice: Option<&str>,
     supports_strict_mode: bool,
 ) -> Result<Option<FunctionCallingConfigMode>, String> {
-    let use_strict_mode = tools.iter().any(|tool| {
-        resolve_json_schema_strict_sampling(tool, supports_strict_mode) == Ok(Some(true))
-    });
+    // TypeScript's `tools.some(...)` propagates a throwing resolver, so the
+    // require-strict error must escape instead of being treated as `false`.
+    let mut use_strict_mode = false;
+    for tool in tools {
+        if resolve_json_schema_strict_sampling(tool, supports_strict_mode)? == Some(true) {
+            use_strict_mode = true;
+            break;
+        }
+    }
     if matches!(tool_choice, Some("none") | Some("any")) {
         return Ok(Some(map_tool_choice(tool_choice.expect("checked"))));
     }

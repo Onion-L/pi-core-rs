@@ -295,26 +295,37 @@ async fn request_stream(
     options: Option<&GoogleOptions>,
     params: Value,
 ) -> Result<crate::ai::utils::http::HttpResponse, String> {
-    let mut headers: Vec<(String, String)> = vec![
-        ("x-goog-api-key".to_string(), api_key.to_string()),
-        ("content-type".to_string(), "application/json".to_string()),
-    ];
-    headers.push((
+    // The SDK merges the default User-Agent with model/request headers into a
+    // single record (`providerHeadersToRecord`); later sources override and
+    // null-valued request headers suppress a default entirely.
+    let mut header_map: std::collections::BTreeMap<String, String> =
+        std::collections::BTreeMap::new();
+    header_map.insert(
         "User-Agent".to_string(),
         crate::ai::session_resources::get_pi_user_agent(),
-    ));
+    );
     if let Some(model_headers) = &model.headers {
         for (name, value) in model_headers {
-            headers.push((name.clone(), value.clone()));
+            header_map.insert(name.clone(), value.clone());
         }
     }
     if let Some(options_headers) = options_headers {
         for (name, value) in options_headers {
-            if let Some(value) = value {
-                headers.push((name.clone(), value.clone()));
+            match value {
+                Some(value) => {
+                    header_map.insert(name.clone(), value.clone());
+                }
+                None => {
+                    header_map.remove(name);
+                }
             }
         }
     }
+    let mut headers: Vec<(String, String)> = vec![
+        ("x-goog-api-key".to_string(), api_key.to_string()),
+        ("content-type".to_string(), "application/json".to_string()),
+    ];
+    headers.extend(header_map);
 
     let fetch = options
         .and_then(|options| options.base.base.fetch.clone())
