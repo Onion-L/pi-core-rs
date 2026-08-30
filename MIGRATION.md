@@ -62,8 +62,8 @@ upstream package).
 | `src/api/bedrock-converse-stream.ts` | `src/ai/api/bedrock_converse_stream.rs` | done (SigV4 with the documented AWS vector, bearer/skip-auth/static/profile credential resolution, endpoint+region resolution, vnd.amazon.eventstream framing; web-identity (IRSA) and ECS credential fetching are not implemented — the provider reports them configured but the wire layer lacks the STS/container fetch, to be revisited) |
 | `src/api/cloudflare-gateway-binding.ts` | `src/ai/api/cloudflare_gateway_binding.rs` | done (Request/init split and fetch-signal forwarding have no Rust transport equivalent; documented in the module) |
 | `src/api/cloudflare.ts` | `src/ai/api/cloudflare.rs` | done |
-| `src/api/constrained-sampling.ts` | `src/ai/api/constrained-sampling.rs` | done |
-| `src/api/github-copilot-headers.ts` | `src/ai/api/github-copilot-headers.rs` | done |
+| `src/api/constrained-sampling.ts` | `src/ai/api/constrained_sampling.rs` | done |
+| `src/api/github-copilot-headers.ts` | `src/ai/api/github_copilot_headers.rs` | done |
 | `src/api/google-generative-ai.lazy.ts` | `src/ai/providers/apis.rs` | done |
 | `src/api/google-generative-ai.ts` | `src/ai/api/google_generative_ai.rs` | done |
 | `src/api/google-shared.ts` | `src/ai/api/google_shared.rs` | done |
@@ -84,8 +84,8 @@ upstream package).
 | `src/api/openrouter-images.ts` | `src/ai/api/openrouter_images.rs` | done (transport cannot observe the abort token; a pre-flight cancellation check replaces OpenAI-SDK signal handling) |
 | `src/api/pi-messages.lazy.ts` | `src/ai/providers/apis.rs` | done |
 | `src/api/pi-messages.ts` | `src/ai/api/pi_messages.rs` | done |
-| `src/api/simple-options.ts` | `src/ai/api/simple-options.rs` | done |
-| `src/api/transform-messages.ts` | `src/ai/api/transform-messages.rs` | done |
+| `src/api/simple-options.ts` | `src/ai/api/simple_options.rs` | done |
+| `src/api/transform-messages.ts` | `src/ai/api/transform_messages.rs` | done |
 | `src/auth/context.ts` | `src/ai/auth/context.rs` | done |
 | `src/auth/credential-store.ts` | `src/ai/auth/credential_store.rs` | done |
 | `src/auth/helpers.ts` | `src/ai/auth/helpers.rs` | done |
