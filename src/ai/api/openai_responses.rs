@@ -611,7 +611,14 @@ async fn run_stream(
             },
         )),
     };
-    process_responses_stream(events, output, producer, model, Some(&stream_options)).await?;
+    process_responses_stream(
+        futures::stream::iter(events.into_iter().map(Ok::<serde_json::Value, String>)),
+        output,
+        producer,
+        model,
+        Some(&stream_options),
+    )
+    .await?;
 
     let signal = options.and_then(|options| options.base.base.signal.clone());
     if signal.as_ref().is_some_and(|token| token.is_cancelled()) {

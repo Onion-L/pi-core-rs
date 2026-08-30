@@ -464,7 +464,12 @@ pub fn convert_responses_tools(
     options: Option<&ConvertResponsesToolsOptions>,
 ) -> Result<Vec<Value>, String> {
     let options = options.cloned().unwrap_or_default();
-    let default_strict = options.strict.unwrap_or(Some(false)).unwrap_or(false);
+    // `options.strict === undefined ? false : options.strict`: a `null`
+    // default must serialize as `strict: null` (Codex sets it explicitly).
+    let default_strict = match options.strict {
+        Some(value) => value,
+        None => Some(false),
+    };
     let supports_strict_mode = options.supports_strict_mode.unwrap_or(true);
     let supports_openai_grammar_tools = options.supports_openai_grammar_tools.unwrap_or(false);
 
@@ -497,14 +502,14 @@ pub fn convert_responses_tools(
 
             let constrained_strict =
                 resolve_json_schema_strict_sampling(tool, supports_strict_mode)?;
-            let strict = constrained_strict.unwrap_or(default_strict);
+            let strict = constrained_strict.or(default_strict);
             let mut function_tool = Map::new();
             function_tool.insert("type".to_string(), json!("function"));
             function_tool.insert("name".to_string(), json!(tool.name));
             function_tool.insert("description".to_string(), json!(tool.description));
             function_tool.insert(
                 "parameters".to_string(),
-                get_json_schema_tool_parameters(tool, strict)?,
+                get_json_schema_tool_parameters(tool, strict == Some(true))?,
             );
             if options.defer_loading == Some(true) {
                 function_tool.insert("defer_loading".to_string(), json!(true));
@@ -579,15 +584,20 @@ fn map_stop_reason(
 }
 
 /// Port of `processResponsesStream`: consumes raw Responses SSE event values.
+/// The TypeScript original iterates an async event iterable; the Rust port
+/// takes a stream of `Result` items so provider adapters can surface mapping
+/// errors (the TS generator `throw` path) mid-stream.
 #[allow(clippy::too_many_lines)]
-pub async fn process_responses_stream(
-    events: Vec<Value>,
+pub async fn process_responses_stream<S>(
+    events: S,
     output: &mut AssistantMessage,
     stream: &AssistantMessageEventStream,
     model: &Model,
     options: Option<&ResponsesStreamOptions>,
-) -> Result<(), String> {
-    #[allow(unused_assignments)]
+) -> Result<(), String>
+where
+    S: futures::Stream<Item = Result<Value, String>>,
+{
     #[allow(unused_assignments)]
     let mut saw_terminal_response_event = false;
     let mut output_slots: BTreeMap<u64, ResponsesOutputSlot> = BTreeMap::new();
@@ -597,7 +607,9 @@ pub async fn process_responses_stream(
         .and_then(|options| options.grammar_tool_input_properties.clone())
         .unwrap_or_default();
 
-    for event in events {
+    let mut events = std::pin::pin!(events);
+    while let Some(event) = futures::StreamExt::next(&mut events).await {
+        let event = event?;
         let event_type = event
             .get("type")
             .and_then(Value::as_str)
@@ -1503,9 +1515,6 @@ fn finalize_response(
             }
             stored_item["encrypted_content"] = json!(encrypted_content);
             let updated = serde_json::to_string(&stored_item).unwrap_or_default();
-            if let Some(slot) = reasoning_blocks_by_id.get(id) {
-                let _ = slot;
-            }
             // Apply through output.content: the slot position is found by
             // signature identity.
             for block in output.content.iter_mut() {

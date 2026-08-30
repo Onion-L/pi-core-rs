@@ -95,11 +95,11 @@ fn extract_account_id(auth_token: &str) -> Option<String> {
     let (_header, payload) = (parts.next()?, parts.next()?);
     let decoded = decode_base64_url(payload)?;
     let parsed: Value = serde_json::from_str(&decoded).ok()?;
+    // The claim key contains '/' characters, so a JSON pointer cannot address
+    // it; read the object keys directly.
     parsed
-        .pointer(&format!(
-            "/{}/chatgpt_account_id",
-            "https://api.openai.com/auth"
-        ))
+        .get("https://api.openai.com/auth")
+        .and_then(|auth| auth.get("chatgpt_account_id"))
         .and_then(Value::as_str)
         .map(str::to_string)
 }
@@ -307,10 +307,14 @@ pub fn build_request_body(
         "input": messages,
         "text": {"verbosity": options.text_verbosity.clone().unwrap_or_else(|| "low".to_string())},
         "include": ["reasoning.encrypted_content"],
-        "prompt_cache_key": cache_session_id,
         "tool_choice": options.tool_choice.clone().unwrap_or_else(|| "auto".to_string()),
         "parallel_tool_calls": true,
     });
+    // TypeScript sets `prompt_cache_key: cacheSessionId`, which JSON.stringify
+    // omits entirely when undefined; only send the key when present.
+    if let Some(cache_session_id) = cache_session_id {
+        body["prompt_cache_key"] = json!(cache_session_id);
+    }
 
     if let Some(temperature) = options.base.temperature {
         body["temperature"] = json!(temperature);
@@ -418,99 +422,167 @@ fn apply_service_tier_pricing(usage: &mut Usage, service_tier: Option<&str>, mod
     .into();
 }
 
-/// Port of `mapCodexEvents`: normalizes Codex event frames to the shared
-/// Responses event stream (end_turn capture, status normalization, error
-/// extraction).
-fn map_codex_events(
-    events: Vec<Value>,
-    output: &mut crate::ai::types::AssistantMessage,
-) -> Vec<Value> {
-    let mut mapped = Vec::with_capacity(events.len());
-    for event in events {
-        let Some(event_type) = event
-            .get("type")
-            .and_then(Value::as_str)
-            .map(str::to_string)
-        else {
-            continue;
-        };
+/// The unfold state threaded through the Codex SSE event stream.
+type CodexSseState = (
+    crate::ai::utils::sse::SseStream,
+    bool,
+    Arc<std::sync::Mutex<Option<bool>>>,
+    Option<tokio_util::sync::CancellationToken>,
+);
 
-        if event_type == "error" {
-            let code = event
-                .get("code")
-                .and_then(Value::as_str)
-                .map(str::to_string);
-            let message = event
-                .get("message")
-                .and_then(Value::as_str)
-                .map(str::to_string);
-            let detail = message
-                .clone()
-                .or_else(|| code.clone())
-                .unwrap_or_else(|| serde_json::to_string(&event).unwrap_or_default());
-            // Return the error through a synthetic error event so the shared
-            // processor surfaces it with the Codex prefix.
-            mapped.push(json!({
-                "type": "error",
-                "code": code.unwrap_or_default(),
-                "message": format!("Codex error: {detail}"),
-            }));
-            return mapped;
-        }
+/// Terminal `Err("Request was aborted")` item carrying the unfold state.
+fn aborted_codex_item(
+    sse: crate::ai::utils::sse::SseStream,
+    end_turn: Arc<std::sync::Mutex<Option<bool>>>,
+    signal: Option<tokio_util::sync::CancellationToken>,
+) -> Option<(Result<Value, String>, CodexSseState)> {
+    Some((
+        Err("Request was aborted".to_string()),
+        (sse, true, end_turn, signal),
+    ))
+}
 
-        if event_type == "response.failed" {
-            let code = event
-                .pointer("/response/error/code")
-                .and_then(Value::as_str)
-                .map(str::to_string);
-            let message = event
-                .pointer("/response/error/message")
-                .and_then(Value::as_str)
-                .map(str::to_string)
-                .unwrap_or_else(|| "Codex response failed".to_string());
-            mapped.push(json!({
-                "type": "error",
-                "code": code.unwrap_or_default(),
-                "message": message,
-            }));
-            return mapped;
-        }
-
-        if matches!(
-            event_type.as_str(),
-            "response.done" | "response.completed" | "response.incomplete"
-        ) {
-            let mut event = event;
-            if let Some(response) = event.get_mut("response").and_then(Value::as_object_mut) {
-                if let Some(end_turn) = response.get("end_turn")
-                    && end_turn.is_boolean()
-                {
-                    output.end_turn = Some(end_turn.as_bool().unwrap_or(false));
-                }
-                // Normalize unknown statuses to undefined.
-                if let Some(status) = response.get("status")
-                    && !matches!(
-                        status.as_str(),
-                        Some("completed")
-                            | Some("incomplete")
-                            | Some("failed")
-                            | Some("cancelled")
-                            | Some("queued")
-                            | Some("in_progress")
-                    )
-                {
-                    response.remove("status");
-                }
+/// Port of the `parseSSE` + `mapCodexEvents` async-generator pipeline: a lazy
+/// stream of mapped Codex events fed to the shared Responses processor as
+/// they arrive off the SSE body.
+///
+/// Like the TypeScript generators, consumption stops at the terminal
+/// `response.done`/`response.completed`/`response.incomplete` event even when
+/// the SSE body stays open, `__error__` frames surface as `Err` items, and an
+/// aborted signal cancels pending body reads (surfacing "Request was
+/// aborted"). A boolean `end_turn` on the terminal response is captured into
+/// `end_turn` for the caller to apply once processing finishes.
+fn codex_sse_event_stream(
+    body: futures::stream::BoxStream<
+        'static,
+        Result<bytes::Bytes, crate::ai::utils::http::HttpFetchError>,
+    >,
+    signal: Option<tokio_util::sync::CancellationToken>,
+    end_turn: Arc<std::sync::Mutex<Option<bool>>>,
+) -> impl futures::Stream<Item = Result<Value, String>> {
+    let sse = crate::ai::utils::sse::SseStream::new(body);
+    futures::stream::unfold(
+        (sse, false, end_turn, signal),
+        |(mut sse, done, end_turn, signal)| async move {
+            if done {
+                return None;
             }
-            let mut normalized = event.clone();
-            normalized["type"] = json!("response.completed");
-            mapped.push(normalized);
-            return mapped;
-        }
+            loop {
+                if signal.as_ref().is_some_and(|token| token.is_cancelled()) {
+                    return aborted_codex_item(sse, end_turn, signal);
+                }
+                let sse_event = match signal.as_ref() {
+                    Some(token) => tokio::select! {
+                        event = futures::StreamExt::next(&mut sse) => event,
+                        () = token.cancelled() => {
+                            return aborted_codex_item(sse, end_turn, signal);
+                        }
+                    },
+                    None => futures::StreamExt::next(&mut sse).await,
+                };
+                if signal.as_ref().is_some_and(|token| token.is_cancelled()) {
+                    return aborted_codex_item(sse, end_turn, signal);
+                }
+                let sse_event = sse_event?;
+                if sse_event.event.as_deref() == Some("__error__") {
+                    return Some((Err(sse_event.data), (sse, true, end_turn, signal)));
+                }
+                let data = sse_event.data.trim();
+                if data.is_empty() || data == "[DONE]" {
+                    continue;
+                }
+                let Ok(event) = serde_json::from_str::<Value>(data) else {
+                    continue;
+                };
 
-        mapped.push(event);
-    }
-    mapped
+                let Some(event_type) = event
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+                else {
+                    continue;
+                };
+
+                if event_type == "error" {
+                    let code = event
+                        .get("code")
+                        .and_then(Value::as_str)
+                        .map(str::to_string);
+                    let message = event
+                        .get("message")
+                        .and_then(Value::as_str)
+                        .map(str::to_string);
+                    let detail = message
+                        .clone()
+                        .or_else(|| code.clone())
+                        .unwrap_or_else(|| serde_json::to_string(&event).unwrap_or_default());
+                    // Return the error through a synthetic error event so the shared
+                    // processor surfaces it with the Codex prefix.
+                    return Some((
+                        Ok(json!({
+                            "type": "error",
+                            "code": code.unwrap_or_default(),
+                            "message": format!("Codex error: {detail}"),
+                        })),
+                        (sse, true, end_turn, signal),
+                    ));
+                }
+
+                if event_type == "response.failed" {
+                    let code = event
+                        .pointer("/response/error/code")
+                        .and_then(Value::as_str)
+                        .map(str::to_string);
+                    let message = event
+                        .pointer("/response/error/message")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                        .unwrap_or_else(|| "Codex response failed".to_string());
+                    return Some((
+                        Ok(json!({
+                            "type": "error",
+                            "code": code.unwrap_or_default(),
+                            "message": message,
+                        })),
+                        (sse, true, end_turn, signal),
+                    ));
+                }
+
+                if matches!(
+                    event_type.as_str(),
+                    "response.done" | "response.completed" | "response.incomplete"
+                ) {
+                    let mut event = event;
+                    if let Some(response) = event.get_mut("response").and_then(Value::as_object_mut)
+                    {
+                        if let Some(end_turn_value) = response.get("end_turn")
+                            && end_turn_value.is_boolean()
+                        {
+                            *end_turn.lock().unwrap() = end_turn_value.as_bool();
+                        }
+                        // Normalize unknown statuses to undefined.
+                        if let Some(status) = response.get("status")
+                            && !matches!(
+                                status.as_str(),
+                                Some("completed")
+                                    | Some("incomplete")
+                                    | Some("failed")
+                                    | Some("cancelled")
+                                    | Some("queued")
+                                    | Some("in_progress")
+                            )
+                        {
+                            response.remove("status");
+                        }
+                    }
+                    event["type"] = json!("response.completed");
+                    return Some((Ok(event), (sse, true, end_turn, signal)));
+                }
+
+                return Some((Ok(event), (sse, false, end_turn, signal)));
+            }
+        },
+    )
 }
 
 /// Port of the `stream` stream function (SSE transport).
@@ -614,6 +686,8 @@ async fn run_stream(
         body = next_body;
     }
 
+    // Port of `buildSSEHeaders`: base Codex headers plus the SSE-only
+    // OpenAI-Beta value and session affinity headers.
     let mut headers: Vec<(String, String)> = vec![
         ("accept".to_string(), "text/event-stream".to_string()),
         ("content-type".to_string(), "application/json".to_string()),
@@ -622,8 +696,17 @@ async fn run_stream(
     if let Some(account_id) = &account_id {
         headers.push(("chatgpt-account-id".to_string(), account_id.clone()));
     }
+    headers.push(("originator".to_string(), "pi".to_string()));
+    headers.push((
+        "User-Agent".to_string(),
+        crate::ai::session_resources::get_pi_user_agent(),
+    ));
+    headers.push((
+        "OpenAI-Beta".to_string(),
+        "responses=experimental".to_string(),
+    ));
     if let Some(session_id) = &codex_session_id {
-        headers.push(("session_id".to_string(), session_id.clone()));
+        headers.push(("session-id".to_string(), session_id.clone()));
         headers.push(("x-client-request-id".to_string(), session_id.clone()));
     }
     if let Some(model_headers) = &model.headers {
@@ -655,6 +738,12 @@ async fn run_stream(
     let max_retries = options
         .and_then(|options| options.base.base.max_retries)
         .unwrap_or(DEFAULT_MAX_RETRIES);
+    // Port of the `AbortSignal.timeout(httpTimeoutMs)` applied to the SSE
+    // fetch: bounds the wait for response headers only (body reads are
+    // cancelled through the caller's signal).
+    let header_timeout_ms = options
+        .and_then(|options| options.base.base.timeout_ms)
+        .filter(|timeout_ms| *timeout_ms > 0);
     let now_ms = || crate::ai::auth::resolve::now_millis();
     let mut response = None;
     'attempts: for attempt in 0..=max_retries {
@@ -668,13 +757,33 @@ async fn run_stream(
                 let fetch = Arc::clone(&fetch);
                 let request = request.clone();
                 async move {
-                    fetch.fetch(request).await.map_err(|error| {
-                        crate::ai::utils::provider_retry::ProviderHttpError::new(
-                            error.to_string(),
-                            None,
-                            Vec::new(),
-                        )
-                    })
+                    let pending = fetch.fetch(request);
+                    if let Some(timeout_ms) = header_timeout_ms {
+                        tokio::select! {
+                            result = pending => result.map_err(|error| {
+                                crate::ai::utils::provider_retry::ProviderHttpError::new(
+                                    error.to_string(),
+                                    None,
+                                    Vec::new(),
+                                )
+                            }),
+                            () = tokio::time::sleep(std::time::Duration::from_millis(timeout_ms)) => {
+                                Err(crate::ai::utils::provider_retry::ProviderHttpError::new(
+                                    format!("Codex SSE response headers timed out after {timeout_ms}ms"),
+                                    None,
+                                    Vec::new(),
+                                ))
+                            }
+                        }
+                    } else {
+                        pending.await.map_err(|error| {
+                            crate::ai::utils::provider_retry::ProviderHttpError::new(
+                                error.to_string(),
+                                None,
+                                Vec::new(),
+                            )
+                        })
+                    }
                 }
             },
             crate::ai::utils::provider_retry::ProviderRetryOptions {
@@ -763,29 +872,6 @@ async fn run_stream(
         partial: output.clone(),
     });
 
-    // Parse SSE data frames, map Codex events, then run the shared processor.
-    let mut sse = crate::ai::utils::sse::SseStream::new(response.body);
-    let mut raw_events: Vec<Value> = Vec::new();
-    while let Some(sse_event) = futures::StreamExt::next(&mut sse).await {
-        if sse_event.event.as_deref() == Some("__error__") {
-            return Err(sse_event.data);
-        }
-        let data = sse_event
-            .data
-            .lines()
-            .filter(|line| line.starts_with("data:"))
-            .map(|line| line[5..].trim())
-            .collect::<Vec<_>>()
-            .join("\n");
-        if data.is_empty() || data == "[DONE]" {
-            continue;
-        }
-        if let Ok(event) = serde_json::from_str::<Value>(&data) {
-            raw_events.push(event);
-        }
-    }
-    let mapped = map_codex_events(raw_events, output);
-
     let model_owned = model.clone();
     let stream_options = ResponsesStreamOptions {
         service_tier: options.and_then(|options| options.service_tier.clone()),
@@ -801,7 +887,18 @@ async fn run_stream(
             },
         )),
     };
-    process_responses_stream(mapped, output, producer, model, Some(&stream_options)).await?;
+    // Lazily feed mapped Codex SSE events into the shared processor so the
+    // pipeline finishes at the terminal response event even while the SSE
+    // body stays open, and so body-read errors/aborts surface mid-stream.
+    let signal = options.and_then(|options| options.base.base.signal.clone());
+    let end_turn: Arc<std::sync::Mutex<Option<bool>>> = Arc::new(std::sync::Mutex::new(None));
+    let mapped = codex_sse_event_stream(response.body, signal, Arc::clone(&end_turn));
+    let processed =
+        process_responses_stream(mapped, output, producer, model, Some(&stream_options)).await;
+    if let Some(end_turn) = end_turn.lock().unwrap().take() {
+        output.end_turn = Some(end_turn);
+    }
+    processed?;
 
     let signal = options.and_then(|options| options.base.base.signal.clone());
     if signal.as_ref().is_some_and(|token| token.is_cancelled()) {
