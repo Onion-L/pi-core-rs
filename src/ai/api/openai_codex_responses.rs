@@ -286,7 +286,7 @@ pub fn build_request_body(
         Some(&ConvertResponsesMessagesOptions {
             include_system_prompt: Some(false),
             grammar_tool_input_properties: Some(grammar_tool_input_properties),
-            deferred_tools: Some(&tool_placement.deferred_btree()),
+            deferred_tools: Some(&tool_placement.deferred),
             deferred_tools_mode,
             tool_options: Some(
                 crate::ai::api::openai_responses_shared::ConvertResponsesToolsOptions {

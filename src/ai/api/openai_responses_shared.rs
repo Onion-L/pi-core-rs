@@ -117,7 +117,7 @@ pub type GrammarToolInputProperties = std::collections::BTreeMap<String, String>
 pub struct ConvertResponsesMessagesOptions<'a> {
     pub include_system_prompt: Option<bool>,
     pub grammar_tool_input_properties: Option<&'a GrammarToolInputProperties>,
-    pub deferred_tools: Option<&'a BTreeMap<String, Tool>>,
+    pub deferred_tools: Option<&'a indexmap::IndexMap<String, Tool>>,
     pub deferred_tools_mode: Option<DeferredToolsMode>,
     pub tool_options: Option<ConvertResponsesToolsOptions>,
 }
