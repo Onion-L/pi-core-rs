@@ -386,9 +386,9 @@ upstream package).
 
 ### Documented deviations and deferrals
 
-Deviation audit (M1): each entry below is either a language/runtime
-difference the port keeps, or an implementable gap tracked as a partial row
-above. No `done` row carries a hidden gap.
+Deviation audit (M1): each entry below is a language/runtime difference the
+port keeps. No `done` row carries a hidden gap, and no implementable gap remains
+tracked.
 
 Kept language/runtime differences:
 
@@ -404,17 +404,14 @@ Kept language/runtime differences:
   `test/lazy-module-load.test.ts` and the Bun `setBedrockProviderModule`
   override have nothing to observe.
 
-Tracked implementable gaps (must close before the migration is complete):
+Closed implementable gaps:
 
-- Live-test Rust entries for the credential-gated TypeScript suites (the
-  `live` rows above need env-gated Rust test files with the same provider
-  matrices)
-- auth.json file mode parity (TS `writeFileSync` default vs the port's
-  explicit 0600) — the `src/cli.ts` row.
-- Proxy URL serialization parity (the `URL` toString trailing slash) — the
-  `src/utils/node-http-proxy.ts` row.
-- Google adapters' rejection of custom fetch — the
-  `src/api/google-generative-ai.ts` and `src/api/google-vertex.ts` rows.
+- Credential-gated TypeScript suites have env-gated Rust live-test entries
+  with the same provider/model matrices.
+- `auth.json` uses the platform default file mode, matching TypeScript's
+  `writeFileSync` call without an explicit mode.
+- Proxy URLs preserve TypeScript `URL` trailing-slash normalization.
+- Google adapters reject custom fetch with the TypeScript error message.
 
 ### Additional Rust modules
 
