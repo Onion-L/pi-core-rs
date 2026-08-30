@@ -7,6 +7,11 @@ Status legend:
 
 - **pending** — not yet ported.
 - **done** — ported with its applicable tests passing.
+- **live** — the TypeScript suite is credential-gated (env API keys or OAuth
+  tokens, same `skipIf` conditions listed in the row); it skips without
+  credentials upstream and stays unported here per `AGENTS.md`. Where the
+  shared machinery behind it is observable offline, the row names the Rust
+  tests that cover that machinery.
 - **exception** — ported with a documented, minimal deviation (the note says
   where the deviation is documented), or deliberately out of scope.
 
@@ -99,7 +104,7 @@ upstream package).
 | `src/auth/types.ts` | `src/ai/auth/types.rs` | done |
 | `src/bedrock-provider.ts` | | exception (Bun static-embed module object; the Rust adapter is `src/ai/providers/apis.rs::bedrock_converse_stream_api`) |
 | `src/bun-oauth.ts` | | exception (Bun binary loader registration; `registerBundledOAuthFlowLoaders` has no Rust counterpart — flows link statically, documented in `src/ai/auth/oauth/load.rs`) |
-| `src/cli.ts` | | pending |
+| `src/cli.ts` | `src/ai/cli.rs` + `src/bin/pi-ai.rs` | done (tests/ai_cli.rs; golden fixtures from scripts/oracle/generate-cli-goldens.mts; auth.json is 0600 on unix — documented hardening deviation) |
 | `src/compat.ts` | `src/ai/compat.rs` | done (global api-provider registry, registerFauxProvider, env-key-injected global stream/complete, deprecated catalog reads) |
 | `src/compat/extension-oauth-types.ts` | `src/ai/compat.rs` | done |
 | `src/env-api-keys.ts` | `src/ai/env_api_keys.rs` | done |
@@ -230,26 +235,26 @@ upstream package).
 
 | TypeScript test | Rust test | Status |
 |---|---|---|
-| `test/abort.test.ts` | | pending |
-| `test/anthropic-adaptive-thinking-models.test.ts` | | pending |
+| `test/abort.test.ts` |  | live (all 41 cases gated per provider on env keys or OAuth tokens, mirroring the TS `skipIf`s; the shared abort machinery is covered offline in `tests/ai_faux_provider.rs`) |
+| `test/anthropic-adaptive-thinking-models.test.ts` | `tests/ai_anthropic_payload.rs` | done |
 | `test/anthropic-auth-token.test.ts` | `tests/ai_anthropic_auth_token.rs` | done (SDK-mock cases assert on the captured HTTP request instead of SDK constructor options) |
-| `test/anthropic-cache-write-1h-cost.test.ts` | | pending |
-| `test/anthropic-eager-tool-input-compat.test.ts` | | pending |
-| `test/anthropic-eager-tool-input-e2e.test.ts` | | pending |
-| `test/anthropic-empty-thinking-signature-compat.test.ts` | | pending |
-| `test/anthropic-force-adaptive-thinking.test.ts` | | pending |
-| `test/anthropic-long-cache-retention-e2e.test.ts` | | pending |
+| `test/anthropic-cache-write-1h-cost.test.ts` | `tests/ai_anthropic_payload.rs` | done |
+| `test/anthropic-eager-tool-input-compat.test.ts` | `tests/ai_anthropic_payload.rs` | done |
+| `test/anthropic-eager-tool-input-e2e.test.ts` |  | live (per-provider probes gated on env keys/Copilot OAuth like the TS `it.skipIf`; the `covers every generated model` case only checks the TS e2e table's own completeness, and the compat surface it guards is covered offline in `tests/ai_anthropic_payload.rs`) |
+| `test/anthropic-empty-thinking-signature-compat.test.ts` | `tests/ai_anthropic_payload.rs` | done |
+| `test/anthropic-force-adaptive-thinking.test.ts` | `tests/ai_anthropic_payload.rs` | done |
+| `test/anthropic-long-cache-retention-e2e.test.ts` |  | live (per-provider probes gated on env keys like the TS `it.skipIf`; the enumeration case only checks the TS e2e table's completeness — the retention payload surface is covered offline in `tests/ai_anthropic_payload.rs`) |
 | `test/anthropic-oauth.test.ts` | `tests/ai_oauth_anthropic.rs` | done |
-| `test/anthropic-opus-4-8-smoke.test.ts` | | pending |
-| `test/anthropic-sse-parsing.test.ts` | | pending |
-| `test/anthropic-temperature-compat.test.ts` | | pending |
-| `test/anthropic-thinking-disable.test.ts` | | pending |
-| `test/anthropic-tool-name-normalization.test.ts` | | pending |
-| `test/azure-openai-base-url.test.ts` | | pending |
-| `test/azure-openai-responses-reasoning-replay.test.ts` | | pending |
-| `test/azure-openai-tool-choice.test.ts` | | pending |
-| `test/azure-utils.ts` | | pending |
-| `test/baseten-models.test.ts` | | pending |
+| `test/anthropic-opus-4-8-smoke.test.ts` |  | live (gated on ANTHROPIC_API_KEY) |
+| `test/anthropic-sse-parsing.test.ts` | `tests/ai_anthropic_stream.rs` | done |
+| `test/anthropic-temperature-compat.test.ts` | `tests/ai_anthropic_payload.rs` | done |
+| `test/anthropic-thinking-disable.test.ts` | `tests/ai_anthropic_payload.rs` | done (offline cases; the trailing E2E describe is gated on ANTHROPIC_API_KEY) |
+| `test/anthropic-tool-name-normalization.test.ts` | `tests/ai_anthropic_payload.rs` | done (TS gates on an Anthropic OAuth token; the mapping is pure name logic, ported offline with an OAuth-shaped key) |
+| `test/azure-openai-base-url.test.ts` | `tests/ai_azure_responses.rs` | done |
+| `test/azure-openai-responses-reasoning-replay.test.ts` | `tests/ai_azure_responses.rs` | done |
+| `test/azure-openai-tool-choice.test.ts` | `tests/ai_azure_responses.rs` | done |
+| `test/azure-utils.ts` | `tests/ai_azure_responses.rs` | done (deployment-name-map helpers; `hasAzureOpenAICredentials` is TS live-test gating plumbing with no Rust counterpart) |
+| `test/baseten-models.test.ts` | `tests/ai_model_catalogs.rs` | done (catalog cases; the chat_template_args payload cases live in `tests/ai_openai_completions.rs`) |
 | `test/bedrock-convert-messages.test.ts` | `tests/ai_bedrock_stream.rs` | done (the two unknown-content-block cases are N/A: Rust's closed content enums cannot carry unknown block types) |
 | `test/bedrock-credentials.test.ts` | inline in `src/ai/api/bedrock_converse_stream.rs` | done (observed on the resolved dispatch config) |
 | `test/bedrock-custom-headers.test.ts` | inline in `src/ai/api/bedrock_converse_stream.rs` | done (middleware apply behavior observed on the outgoing header list; the SDK step/priority/name registration mechanics are N/A) |
@@ -261,118 +266,118 @@ upstream package).
 | `test/bedrock-response-headers.test.ts` | `tests/ai_bedrock_stream.rs` | done (local HTTP server) |
 | `test/bedrock-thinking-payload.test.ts` | `tests/ai_bedrock_stream.rs` | done (credentials-gated E2E case skips like the TS `describe.skipIf`; payload captured via onPayload with an aborted signal instead of a thrown capture) |
 | `test/bedrock-utils.ts` | | exception (live-credential helper for the credentials-gated model suite; no offline behavior to port) |
-| `test/cache-retention.test.ts` | | pending |
+| `test/cache-retention.test.ts` | `tests/ai_anthropic_payload.rs` + `tests/ai_openai_completions.rs` + `tests/ai_openai_responses.rs` | done (all three describes offline, env cases via scoped ProviderEnv) |
 | `test/cloudflare-gateway-binding.test.ts` | `tests/ai_cloudflare_gateway_binding.rs` | done (Request/signal-specific cases documented as N/A in the test header) |
 | `test/cloudflare-stream.test.ts` | `tests/ai_cloudflare_stream.rs` | done (third case covers the TS `??` placeholder-fallback branch) |
-| `test/cloudflare-utils.ts` | | pending (live-credential helper; lands with the live cloudflare provider tests) |
-| `test/codex-websocket-cached-probe.ts` | | pending |
+| `test/cloudflare-utils.ts` |  | exception (live-credential helper for the credentials-gated cloudflare suites, same treatment as `test/bedrock-utils.ts`; no offline behavior to port) |
+| `test/codex-websocket-cached-probe.ts` |  | exception (manual benchmark probe script, not a vitest suite; the websocket transport it measures is outside the SSE-only Rust port) |
 | `test/compat-env.test.ts` | `tests/ai_compat.rs` | done |
-| `test/constrained-sampling.test.ts` | | pending |
-| `test/context-estimate.test.ts` | | pending |
-| `test/context-overflow.test.ts` | | pending |
-| `test/cross-provider-handoff.test.ts` | | pending |
-| `test/deferred-tools.test.ts` | | pending |
-| `test/empty.test.ts` | | pending |
-| `test/env-api-keys.test.ts` | | pending |
-| `test/error-body.test.ts` | | pending |
+| `test/constrained-sampling.test.ts` | `tests/ai_constrained_sampling.rs` | done |
+| `test/context-estimate.test.ts` | `tests/ai_context_estimate.rs` | done |
+| `test/context-overflow.test.ts` |  | live (35 cases gated per provider on env keys/OAuth, mirroring the TS `skipIf`s) |
+| `test/cross-provider-handoff.test.ts` |  | live (gated on any provider credential via `hasAnyApiKey`) |
+| `test/deferred-tools.test.ts` | `tests/ai_deferred_tools.rs` | done |
+| `test/empty.test.ts` |  | live (120 cases gated per provider on env keys/OAuth, mirroring the TS `skipIf`s) |
+| `test/env-api-keys.test.ts` | inline in `src/ai/env_api_keys.rs` | done (scoped env injection) |
+| `test/error-body.test.ts` | inline in `src/ai/utils/error_body.rs` | done (representable cases; JS class-instance/pipe-stream/non-Error inputs are unrepresentable — noted N/A in the test module) |
 | `test/faux-provider.test.ts` | `tests/ai_faux_provider.rs` | done (all 23 cases through the compat global API; the TS factory throw becomes `FauxResponseStep::Factory` returning `Err`, whose catch now emits the single error event) |
-| `test/fetch-option.test.ts` | | pending |
-| `test/fireworks-models.test.ts` | | pending |
-| `test/generate-models-strict.test.ts` | | pending |
-| `test/github-copilot-anthropic.test.ts` | | pending |
+| `test/fetch-option.test.ts` | `tests/ai_anthropic_stream.rs`, `tests/ai_sdk_header_parity.rs`, `tests/ai_openrouter_images.rs`, `tests/ai_mistral.rs`, `tests/ai_codex_stream.rs`, `tests/ai_pi_messages.rs` | done (all legs exercise injected transports; the TS Google leg's rejection of custom fetch is the port's accepted injectable-transport deviation, documented in `src/ai/api/google_generative_ai.rs`) |
+| `test/fireworks-models.test.ts` | `tests/ai_model_catalogs.rs` + `tests/ai_anthropic_payload.rs` | done (catalog cases in the former, x-session-affinity/cache_control/eager payload cases in the latter) |
+| `test/generate-models-strict.test.ts` |  | exception (guards the TS codegen script `scripts/generate-models.ts` itself, same treatment as `test/image-model-data.test.ts`; the generated catalog is committed via `scripts/oracle/export-model-catalog.mts`) |
+| `test/github-copilot-anthropic.test.ts` | `tests/ai_anthropic_payload.rs` | done |
 | `test/github-copilot-oauth.test.ts` | `tests/ai_oauth_github_copilot.rs` | done (Models getAvailable/store halves and the login-budget case included; the budget case rebuilds the provider with a scripted flow, mirroring the TS global-fetch stub) |
-| `test/google-raw-stop-reason.test.ts` | | pending |
-| `test/google-shared-convert-tools.test.ts` | | pending |
-| `test/google-shared-gemini3-unsigned-tool-call.test.ts` | | pending |
-| `test/google-shared-image-tool-result-routing.test.ts` | | pending |
-| `test/google-shared-retry.test.ts` | | pending |
-| `test/google-shared-signed-empty-blocks.test.ts` | | pending |
-| `test/google-thinking-disable.test.ts` | | pending |
-| `test/google-thinking-level-map.test.ts` | | pending |
-| `test/google-thinking-signature.test.ts` | | pending |
-| `test/google-vertex-api-key-resolution.test.ts` | | pending |
+| `test/google-raw-stop-reason.test.ts` | `tests/ai_google_stream.rs` | done |
+| `test/google-shared-convert-tools.test.ts` | `tests/ai_google_shared.rs` | done |
+| `test/google-shared-gemini3-unsigned-tool-call.test.ts` | `tests/ai_google_shared.rs` | done |
+| `test/google-shared-image-tool-result-routing.test.ts` | `tests/ai_google_shared.rs` | done |
+| `test/google-shared-retry.test.ts` | `tests/ai_google_stream.rs` | done (via `retry_provider_request`, the port of the shared retry helper) |
+| `test/google-shared-signed-empty-blocks.test.ts` | `tests/ai_google_shared.rs` | done |
+| `test/google-thinking-disable.test.ts` |  | live (all cases are E2E streams gated on ANTHROPIC/GEMINI/Vertex/OpenAI/OpenRouter credentials) |
+| `test/google-thinking-level-map.test.ts` | `tests/ai_google_shared.rs` | done |
+| `test/google-thinking-signature.test.ts` | `tests/ai_google_shared.rs` | done |
+| `test/google-vertex-api-key-resolution.test.ts` | `tests/ai_google_vertex.rs` | done (asserted on the resolved dispatch and the public resolvers) |
 | `test/image-model-data.test.ts` | | n/a — tests the TS oracle generator script (`scripts/generate-image-models.ts`); the generated catalog it produces is committed via `scripts/oracle/export-model-catalog.mts` |
-| `test/image-tool-result.test.ts` | | pending |
+| `test/image-tool-result.test.ts` |  | live (42 cases gated per provider on env keys/OAuth; 4 further cases are upstream `it.skip`) |
 | `test/images-models.test.ts` | `tests/ai_images_models.rs` (+ `tests/ai_providers.rs` for the builtinImagesModels case) | done |
-| `test/images.test.ts` | | pending (live E2E, gated on OPENROUTER_API_KEY; offline surface covered by `tests/ai_openrouter_images.rs`) |
-| `test/interleaved-thinking.test.ts` | | pending |
+| `test/images.test.ts` |  | live (E2E gated on OPENROUTER_API_KEY; offline surface covered by `tests/ai_openrouter_images.rs`) |
+| `test/interleaved-thinking.test.ts` |  | live (gated on Bedrock credentials and Anthropic credentials; offline payload analogs in `tests/ai_bedrock_stream.rs`/`tests/ai_anthropic_payload.rs`) |
 | `test/kimi-coding-oauth.test.ts` | `tests/ai_oauth_kimi_coding.rs` | done |
-| `test/lax-message-content.test.ts` | | pending |
+| `test/lax-message-content.test.ts` |  | exception (Rust's closed `Message` content types cannot represent null/missing content — the laxness the TS test pins is enforced by the type system; see the same class of note in `tests/harness_truncate.rs`) |
 | `test/lazy-module-load.test.ts` | | exception (Node module-registry probe asserting SDK imports stay lazy under bundlers; Rust links statically so there is no lazy loading to observe — see `src/ai/providers/apis.rs`) |
-| `test/max-thinking.test.ts` | | pending |
-| `test/mistral-http-transport.test.ts` | | pending |
-| `test/mistral-raw-stop-reason.test.ts` | | pending |
-| `test/mistral-reasoning-mode.test.ts` | | pending |
-| `test/mistral-tool-schema.test.ts` | | pending |
-| `test/model-catalog-types.test.ts` | | pending |
-| `test/model-data-validation.test.ts` | | pending |
-| `test/models-runtime.test.ts` | | pending |
-| `test/node-http-proxy.test.ts` | | pending |
+| `test/max-thinking.test.ts` | `tests/ai_models.rs` + `tests/ai_supports_xhigh.rs` + `tests/ai_codex_stream.rs` | done |
+| `test/mistral-http-transport.test.ts` | `tests/ai_mistral.rs` | done |
+| `test/mistral-raw-stop-reason.test.ts` | `tests/ai_mistral.rs` | done |
+| `test/mistral-reasoning-mode.test.ts` | `tests/ai_mistral.rs` | done |
+| `test/mistral-tool-schema.test.ts` | `tests/ai_mistral.rs` | done |
+| `test/model-catalog-types.test.ts` | `tests/ai_model_catalogs.rs` | done (the runtime Grok-4.5 routing case; the `expectTypeOf` halves are compile-time TS type-level checks with no runtime behavior) |
+| `test/model-data-validation.test.ts` | `tests/ai_model_catalogs.rs` | done (ported as embedded-catalog integrity checks — duplicate ids across API groups, group/provider/api consistency, exact generated allowlists; the directory/manifest-hash/script-stamp mechanics validate the TS codegen's shard directory and have no Rust counterpart) |
+| `test/models-runtime.test.ts` | `tests/ai_models.rs` | done (+ `tests/ai_auth.rs` and `tests/ai_providers.rs` for the auth-resolution cases) |
+| `test/node-http-proxy.test.ts` | inline in `src/ai/utils/node_http_proxy.rs` | done (scoped env; reqwest client construction replaces the undici agent) |
 | `test/oauth-auth.test.ts` | `tests/ai_oauth_auth.rs` | done (Models.getAuth lazy-chain cases included; module-barrel introspection is a TypeScript namespace concern) |
 | `test/oauth-device-code.test.ts` | `tests/ai_oauth_device_code.rs` | done |
-| `test/oauth.ts` | | pending |
-| `test/openai-codex-cache-affinity-e2e.test.ts` | | pending |
+| `test/oauth.ts` |  | exception (live-credential test helper reading `~/.pi/agent/auth.json`; the runtime equivalent is `src/ai/auth/resolve.rs` and has no offline behavior to port) |
+| `test/openai-codex-cache-affinity-e2e.test.ts` |  | live (gated on the openai-codex OAuth token) |
 | `test/openai-codex-oauth.test.ts` | `tests/ai_oauth_openai_codex.rs` | done |
-| `test/openai-codex-stream.test.ts` | | pending |
-| `test/openai-completions-cache-control-format.test.ts` | | pending |
-| `test/openai-completions-empty-tools.test.ts` | | pending |
-| `test/openai-completions-prompt-cache.test.ts` | | pending |
-| `test/openai-completions-raw-stop-reason.test.ts` | | pending |
-| `test/openai-completions-reasoning-details.test.ts` | | pending |
-| `test/openai-completions-response-model.test.ts` | | pending |
-| `test/openai-completions-retry.test.ts` | | pending |
-| `test/openai-completions-thinking-as-text.test.ts` | | pending |
-| `test/openai-completions-thinking-token-budget.test.ts` | | pending |
-| `test/openai-completions-tool-choice.test.ts` | | pending |
-| `test/openai-completions-tool-result-images.test.ts` | | pending |
-| `test/openai-responses-cache-affinity-e2e.test.ts` | | pending |
-| `test/openai-responses-compat.test.ts` | | pending |
-| `test/openai-responses-empty-tool-result.test.ts` | | pending |
-| `test/openai-responses-foreign-toolcall-id.test.ts` | | pending |
-| `test/openai-responses-message-id.test.ts` | | pending |
-| `test/openai-responses-namespace.test.ts` | | pending |
-| `test/openai-responses-partial-json-cleanup.test.ts` | | pending |
-| `test/openai-responses-reasoning-replay-e2e.test.ts` | | pending |
-| `test/openai-responses-terminal-event.test.ts` | | pending |
-| `test/openai-responses-tool-result-images.test.ts` | | pending |
-| `test/openrouter-cache-control-models.test.ts` | | pending |
-| `test/openrouter-cache-write-repro.test.ts` | | pending |
+| `test/openai-codex-stream.test.ts` | `tests/ai_codex_stream.rs` | done (the SSE surface; the 11 websocket cases and zstd compression are outside the SSE-only port — documented in the test file header and below) |
+| `test/openai-completions-cache-control-format.test.ts` | `tests/ai_openai_completions.rs` | done |
+| `test/openai-completions-empty-tools.test.ts` | `tests/ai_openai_completions.rs` | done |
+| `test/openai-completions-prompt-cache.test.ts` | `tests/ai_openai_completions.rs` | done |
+| `test/openai-completions-raw-stop-reason.test.ts` | `tests/ai_openai_completions.rs` | done |
+| `test/openai-completions-reasoning-details.test.ts` | `tests/ai_openai_completions_replay.rs` | done |
+| `test/openai-completions-response-model.test.ts` | `tests/ai_openai_completions_replay.rs` | done |
+| `test/openai-completions-retry.test.ts` | `tests/ai_openai_completions_replay.rs` | done (+ `tests/ai_retry.rs` for the shared provider-retry helper cases) |
+| `test/openai-completions-thinking-as-text.test.ts` | `tests/ai_openai_completions_replay.rs` | done |
+| `test/openai-completions-thinking-token-budget.test.ts` | `tests/ai_openai_completions.rs` | done |
+| `test/openai-completions-tool-choice.test.ts` | `tests/ai_openai_completions.rs` + `tests/ai_openai_completions_replay.rs` | done (payload/options cases in the former, stream/replay cases in the latter) |
+| `test/openai-completions-tool-result-images.test.ts` | `tests/ai_openai_completions_replay.rs` | done |
+| `test/openai-responses-cache-affinity-e2e.test.ts` |  | live (gated on OPENAI_API_KEY) |
+| `test/openai-responses-compat.test.ts` | `tests/ai_openai_responses.rs` | done |
+| `test/openai-responses-empty-tool-result.test.ts` | `tests/ai_openai_responses.rs` | done |
+| `test/openai-responses-foreign-toolcall-id.test.ts` | `tests/ai_openai_responses.rs` | done |
+| `test/openai-responses-message-id.test.ts` | `tests/ai_openai_responses.rs` | done |
+| `test/openai-responses-namespace.test.ts` | `tests/ai_openai_responses.rs` | done |
+| `test/openai-responses-partial-json-cleanup.test.ts` | `tests/ai_openai_responses.rs` | done |
+| `test/openai-responses-reasoning-replay-e2e.test.ts` |  | live (gated on OPENAI_API_KEY and ANTHROPIC_API_KEY) |
+| `test/openai-responses-terminal-event.test.ts` | `tests/ai_openai_responses.rs` | done |
+| `test/openai-responses-tool-result-images.test.ts` |  | live (4 cases gated on OPENAI_API_KEY, Azure credentials, Copilot OAuth, and Codex OAuth) |
+| `test/openrouter-cache-control-models.test.ts` | `tests/ai_model_catalogs.rs` | done |
+| `test/openrouter-cache-write-repro.test.ts` |  | live (gated on OPENROUTER_API_KEY) |
 | `test/openrouter-images.test.ts` | `tests/ai_openrouter_images.rs` | done (mock at the `HttpFetch` transport replaces the OpenAI-SDK mock) |
 | `test/openrouter-oauth.test.ts` | `tests/ai_oauth_openrouter.rs` | done |
-| `test/openrouter-reasoning-options.test.ts` | | pending |
-| `test/overflow.test.ts` | | pending |
-| `test/pi-messages.test.ts` | | pending |
-| `test/provider-error-body-passthrough.test.ts` | | pending |
-| `test/provider-error-body-regression.test.ts` | | pending |
-| `test/provider-retry.test.ts` | | pending |
+| `test/openrouter-reasoning-options.test.ts` | `tests/ai_openai_completions.rs` | done (the three streamSimple payload cases; the `getOpenRouterThinkingLevelMap` cases test the TS codegen script and follow the `generate-models-strict` exception) |
+| `test/overflow.test.ts` | `tests/ai_overflow.rs` | done |
+| `test/pi-messages.test.ts` | `tests/ai_pi_messages.rs` | done |
+| `test/provider-error-body-passthrough.test.ts` | `tests/ai_openrouter_images.rs` | done (+ the shared normalizer unit tests in `src/ai/utils/error_body.rs`) |
+| `test/provider-error-body-regression.test.ts` | `tests/ai_openai_completions.rs` + `tests/ai_openai_responses.rs` + `tests/ai_bedrock_stream.rs` | done (per-tier cases; the TS `$response.body.pipe` stream mechanic has no Rust analog, noted at the bedrock tests) |
+| `test/provider-retry.test.ts` | `tests/ai_retry.rs` | done |
 | `test/providers.test.ts` | `tests/ai_providers.rs` (+ `tests/ai_models.rs` for the dispatch-error case) | done |
-| `test/qwen-token-plan-models.test.ts` | | pending |
+| `test/qwen-token-plan-models.test.ts` | `tests/ai_qwen_token_plan.rs` | done |
 | `test/radius-oauth.test.ts` | `tests/ai_oauth_radius.rs` | done |
-| `test/reasoning-options.test.ts` | | pending |
-| `test/responseid.test.ts` | | pending |
-| `test/retry.test.ts` | | pending |
-| `test/sampling-options.test.ts` | | pending |
+| `test/reasoning-options.test.ts` |  | exception (tests the TS codegen script `scripts/models-dev-reasoning-options.ts`; its generated output ships through the committed catalog) |
+| `test/responseid.test.ts` |  | live (11 cases gated per provider on env keys/OAuth) |
+| `test/retry.test.ts` | `tests/ai_retry.rs` | done |
+| `test/sampling-options.test.ts` | `tests/ai_openai_completions.rs` | done |
 | `test/scratch.ts` | | exception: scratch file, not a test |
-| `test/stream.test.ts` | | pending |
-| `test/supports-xhigh.test.ts` | | pending |
-| `test/telemetry-options.test.ts` | | pending |
-| `test/text.test.ts` | | pending |
-| `test/together-models.test.ts` | | pending |
-| `test/tokens.test.ts` | | pending |
-| `test/tool-call-id-normalization.test.ts` | | pending |
-| `test/tool-call-without-result.test.ts` | | pending |
-| `test/total-tokens.test.ts` | | pending |
-| `test/transform-messages-copilot-openai-to-anthropic.test.ts` | | pending |
-| `test/unicode-surrogate.test.ts` | | pending |
-| `test/uuid.test.ts` | | pending |
-| `test/validation.test.ts` | | pending |
+| `test/stream.test.ts` |  | live (233 cases gated per provider on env keys/OAuth; the shared stream/tool/thinking/multi-turn machinery is covered offline in `tests/ai_faux_provider.rs` and `tests/agent_e2e.rs`) |
+| `test/supports-xhigh.test.ts` | `tests/ai_supports_xhigh.rs` | done |
+| `test/telemetry-options.test.ts` | `tests/ai_telemetry_options.rs` | done |
+| `test/text.test.ts` | inline in `src/ai/utils/text.rs` | done |
+| `test/together-models.test.ts` | `tests/ai_model_catalogs.rs` | done |
+| `test/tokens.test.ts` |  | live (26 cases gated per provider on env keys/OAuth; 4 Xiaomi cases are upstream `it.skip`) |
+| `test/tool-call-id-normalization.test.ts` |  | live (4 handoff/prefill cases gated on Copilot/OpenRouter/Codex OAuth tokens) |
+| `test/tool-call-without-result.test.ts` |  | live (30 cases gated per provider on env keys/OAuth; the orphaned-tool-call synthetic-result logic is covered offline in `tests/ai_transform_messages.rs`) |
+| `test/total-tokens.test.ts` |  | live (35 cases gated per provider on env keys/OAuth) |
+| `test/transform-messages-copilot-openai-to-anthropic.test.ts` | `tests/ai_transform_messages.rs` | done |
+| `test/unicode-surrogate.test.ts` |  | live (87 cases gated per provider on env keys/OAuth; unpaired surrogates are unrepresentable in a Rust `String` — the sanitizer is an identity function there, the same class of note as `tests/harness_truncate.rs`) |
+| `test/uuid.test.ts` | inline in `src/ai/utils/uuid.rs` | done |
+| `test/validation.test.ts` | `tests/ai_validation.rs` | done (the Function-constructor CSP case has no Rust analog) |
 | `test/xai-oauth.test.ts` | `tests/ai_oauth_xai.rs` | done |
-| `test/xai-responses.test.ts` | | pending |
-| `test/xhigh.test.ts` | | pending |
-| `test/xiaomi-models.test.ts` | | pending |
-| `test/xiaomi-token-plan-ams-anthropic-empty-signature-smoke.test.ts` | | pending |
-| `test/zai-coding-plan-models.test.ts` | | pending |
-| `test/zen.test.ts` | | pending |
+| `test/xai-responses.test.ts` | `tests/ai_xai_responses.rs` | done |
+| `test/xhigh.test.ts` |  | live (3 cases gated on OPENAI_API_KEY) |
+| `test/xiaomi-models.test.ts` | `tests/ai_model_catalogs.rs` | done |
+| `test/xiaomi-token-plan-ams-anthropic-empty-signature-smoke.test.ts` |  | live (gated on XIAOMI_TOKEN_PLAN_AMS_API_KEY; the allowEmptySignature behavior it probes is covered offline in `tests/ai_anthropic_payload.rs`) |
+| `test/zai-coding-plan-models.test.ts` | `tests/ai_model_catalogs.rs` | done |
+| `test/zen.test.ts` |  | live (per-model smoke cases gated on OPENCODE_API_KEY) |
 
 ### Documented deviations and deferrals
 
@@ -384,10 +389,11 @@ upstream package).
   optimizations without a Rust counterpart yet; the SSE path is the
   protocol-correct fallback the TS adapter also uses.
 
-- `src/cli.ts` (Node CLI for OAuth login) and `src/bun-oauth.ts` (Bun
-  credential export) are runtime entry points for the Node/Bun
-  environments; they depend on the OAuth provider flows and are ported with
-  them (M3). `bun-oauth.ts`'s Bun-specific export has no Rust counterpart.
+- `src/bun-oauth.ts` (Bun credential export) is a runtime entry point for
+  the Bun environment; its Bun-specific export has no Rust counterpart.
+  `src/cli.ts` now has a Rust equivalent (`src/ai/cli.rs` +
+  `src/bin/pi-ai.rs`) with the same help/list/login surface; see its row
+  above.
 - `src/compat.ts` and `src/legacy-api-aliases.ts` are re-export shims over
   the API implementations; they land with the providers (M3).
 - `index.ts` public re-exports are mirrored as they land module by module.
