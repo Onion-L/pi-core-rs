@@ -76,6 +76,7 @@ impl OpenRouterOAuth {
             return Err("Login cancelled".to_string());
         }
         let request = HttpRequest {
+            signal: None,
             method: HttpMethod::Post,
             url: TOKEN_URL.to_string(),
             headers: vec![

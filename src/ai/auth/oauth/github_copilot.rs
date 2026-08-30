@@ -262,6 +262,7 @@ impl GitHubCopilotOAuth {
         signal: &CancellationToken,
     ) -> Result<FetchedResponse, String> {
         let request = HttpRequest {
+            signal: None,
             method,
             url: url.to_string(),
             headers,

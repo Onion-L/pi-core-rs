@@ -333,6 +333,7 @@ async fn request_stream(
     // The SDK appends the method path; baseUrl already includes the version.
     let base_url = model.base_url.trim_end_matches('/');
     let request = HttpRequest {
+        signal: options.and_then(|options| options.base.base.signal.clone()),
         method: HttpMethod::Post,
         url: format!(
             "{base_url}/models/{}:streamGenerateContent?alt=sse",

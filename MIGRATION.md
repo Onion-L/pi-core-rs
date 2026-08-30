@@ -67,7 +67,7 @@ upstream package).
 | `src/api/azure-openai-responses.ts` | `src/ai/api/azure_openai_responses.rs` | done |
 | `src/api/bedrock-converse-stream.lazy.ts` | `src/ai/providers/apis.rs` | done (direct dispatch adapter; the Bun `setBedrockProviderModule` override has no Rust counterpart) |
 | `src/api/bedrock-converse-stream.ts` | `src/ai/api/bedrock_converse_stream.rs` + `src/ai/utils/aws_credentials.rs` | done (SigV4 with the documented AWS vector, bearer/skip-auth/static/profile credential resolution, endpoint+region resolution, vnd.amazon.eventstream framing; the AWS SDK default-chain remote providers the TS adapter delegates to are ported in `aws_credentials.rs` — web identity (IRSA) via the STS `AssumeRoleWithWebIdentity` form call and ECS container credentials via the `169.254.170.2`/full-URI metadata endpoints, both cached until expiry) |
-| `src/api/cloudflare-gateway-binding.ts` | `src/ai/api/cloudflare_gateway_binding.rs` | partial (Request/init header merging and the binding run are ported; forwarding the resolved abort signal into the transport run — the TS `signal` on `binding.gateway(...).run(...)` — is missing because `HttpFetch` requests carry no signal yet) |
+| `src/api/cloudflare-gateway-binding.ts` | `src/ai/api/cloudflare_gateway_binding.rs` | done (Request/init header merging and the binding run are ported; the request's abort signal forwards into the binding run options; the `signal: null`-clears case is unrepresentable — the Rust `HttpRequest` is the single final request form with no `Request`/`init` split) |
 | `src/api/cloudflare.ts` | `src/ai/api/cloudflare.rs` | done |
 | `src/api/constrained-sampling.ts` | `src/ai/api/constrained_sampling.rs` | done |
 | `src/api/github-copilot-headers.ts` | `src/ai/api/github_copilot_headers.rs` | done |
@@ -88,7 +88,7 @@ upstream package).
 | `src/api/openai-responses.lazy.ts` | `src/ai/providers/apis.rs` | done |
 | `src/api/openai-responses.ts` | `src/ai/api/openai_responses.rs` | done |
 | `src/api/openrouter-images.lazy.ts` | `src/ai/providers/builtin.rs` | done (direct dispatch adapter) |
-| `src/api/openrouter-images.ts` | `src/ai/api/openrouter_images.rs` | partial (request/response handling, retry, and usage parsing ported; in-flight cancellation is not observed by the transport — only a pre-flight token check replaces the OpenAI-SDK signal wiring) |
+| `src/api/openrouter-images.ts` | `src/ai/api/openrouter_images.rs` | done (request/response handling, retry, and usage parsing ported; the abort signal rides on the request like the OpenAI-SDK signal wiring, and the transport rejects an already-aborted signal) |
 | `src/api/pi-messages.lazy.ts` | `src/ai/providers/apis.rs` | done |
 | `src/api/pi-messages.ts` | `src/ai/api/pi_messages.rs` | done |
 | `src/api/simple-options.ts` | `src/ai/api/simple_options.rs` | done |
@@ -274,7 +274,7 @@ upstream package).
 | `test/bedrock-thinking-payload.test.ts` | `tests/ai_bedrock_stream.rs` | done (credentials-gated E2E case skips like the TS `describe.skipIf`; payload captured via onPayload with an aborted signal instead of a thrown capture) |
 | `test/bedrock-utils.ts` | | exception (live-credential helper for the credentials-gated model suite; no offline behavior to port) |
 | `test/cache-retention.test.ts` | `tests/ai_anthropic_payload.rs` + `tests/ai_openai_completions.rs` + `tests/ai_openai_responses.rs` | done (all three describes offline, env cases via scoped ProviderEnv) |
-| `test/cloudflare-gateway-binding.test.ts` | `tests/ai_cloudflare_gateway_binding.rs` | partial (init-headers merge and Request-input handling ported; the abort-signal forwarding cases (including `signal: null` clearing) need the transport-level signal plumbed through the binding run) |
+| `test/cloudflare-gateway-binding.test.ts` | `tests/ai_cloudflare_gateway_binding.rs` | done (init-headers merge, Request-input handling, and abort-signal forwarding; the `signal: null`-clears case is unrepresentable — no `Request`/`init` split) |
 | `test/cloudflare-stream.test.ts` | `tests/ai_cloudflare_stream.rs` | done (third case covers the TS `??` placeholder-fallback branch) |
 | `test/cloudflare-utils.ts` |  | exception (live-credential helper for the credentials-gated cloudflare suites, same treatment as `test/bedrock-utils.ts`; no offline behavior to port) |
 | `test/codex-websocket-cached-probe.ts` |  | exception (manual benchmark probe script, not a vitest suite; the websocket transport it measures is ported — see the adapter row — but the probe itself is a live benchmark with no offline assertions to port) |
@@ -408,10 +408,8 @@ Kept language/runtime differences:
 
 Tracked implementable gaps (must close before the migration is complete):
 
-- Abort-signal propagation into the HTTP transport (Cloudflare gateway
-  binding run signal, OpenRouter Images in-flight cancel) — the
-  `src/api/cloudflare-gateway-binding.ts` and `src/api/openrouter-images.ts`
-  rows.
+(none remaining on the pi-ai side; the rows above carry the agent-core and
+harness test gaps)
 - auth.json file mode parity (TS `writeFileSync` default vs the port's
   explicit 0600) — the `src/cli.ts` row.
 - Proxy URL serialization parity (the `URL` toString trailing slash) — the

@@ -246,6 +246,7 @@ async fn run_proxy_request(
         "options": request_options,
     });
     let request = HttpRequest {
+        signal: options.signal.clone(),
         method: HttpMethod::Post,
         url: format!("{}/api/stream", options.proxy_url),
         headers: vec![

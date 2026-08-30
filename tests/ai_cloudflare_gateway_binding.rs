@@ -11,7 +11,7 @@
 use std::sync::{Arc, Mutex};
 
 use pi_core::ai::api::cloudflare_gateway_binding::{
-    AiGatewayBinding, AiGatewayBindingGateway, AiGatewayUniversalRequest,
+    AiGatewayBinding, AiGatewayBindingGateway, AiGatewayRunOptions, AiGatewayUniversalRequest,
     CLOUDFLARE_GATEWAY_BINDING_AUTH_SENTINEL, GatewayBindingFetchOptions,
     create_gateway_binding_fetch,
 };
@@ -26,6 +26,7 @@ const BASE_URL: &str = "https://gateway.ai.cloudflare.com/v1/account-id/my-gatew
 struct CapturedRun {
     gateway_id: String,
     data: AiGatewayUniversalRequest,
+    signal: Option<tokio_util::sync::CancellationToken>,
 }
 
 type ResponseFactory = Arc<dyn Fn() -> HttpResponse + Send + Sync>;
@@ -55,10 +56,12 @@ impl AiGatewayBindingGateway for FakeGateway {
     fn run<'a>(
         &'a self,
         data: AiGatewayUniversalRequest,
+        options: AiGatewayRunOptions,
     ) -> futures::future::BoxFuture<'a, Result<HttpResponse, HttpFetchError>> {
         self.runs.lock().unwrap().push(CapturedRun {
             gateway_id: self.gateway_id.clone(),
             data,
+            signal: options.signal,
         });
         let response = (self.response_factory)();
         Box::pin(async move { Ok(response) })
@@ -101,6 +104,7 @@ fn fetch_fn(binding: &FakeBinding) -> FetchFunction {
 
 fn post(url: &str, body: HttpBody) -> HttpRequest {
     HttpRequest {
+        signal: None,
         method: HttpMethod::Post,
         url: url.to_string(),
         headers: Vec::new(),
@@ -300,6 +304,7 @@ async fn rejects_in_prefix_requests_the_universal_endpoint_cannot_express() {
     let fetch = fetch_fn(&binding);
 
     let get = HttpRequest {
+        signal: None,
         method: HttpMethod::Get,
         url: format!("{BASE_URL}/anthropic/v1/messages"),
         headers: Vec::new(),
@@ -497,4 +502,30 @@ async fn keeps_sdk_placeholder_auth_out_of_entries_when_paired_with_null_auth_he
     assert!(!header_names.contains(&"authorization"));
     assert!(!header_names.contains(&"x-api-key"));
     assert!(!header_names.contains(&"cf-aig-authorization"));
+}
+
+/// Port of "forwards the abort signal": the request's abort signal reaches
+/// the binding run options. (The companion `signal: null`-clears case is
+/// unrepresentable: the Rust `HttpRequest` is the single final request form
+/// with no `Request`/`init` split.)
+#[tokio::test]
+async fn forwards_the_abort_signal() {
+    let binding = fake_binding();
+    let fetch = fetch_fn(&binding);
+
+    let signal = tokio_util::sync::CancellationToken::new();
+    let mut request = post(
+        &format!("{BASE_URL}/anthropic/v1/messages"),
+        HttpBody::Json(serde_json::json!({"model": "claude"})),
+    );
+    request.signal = Some(signal.clone());
+
+    let response = fetch.fetch(request).await.expect("binding run ok");
+    assert_eq!(response.status, 200);
+
+    let runs = binding.runs.lock().unwrap();
+    assert_eq!(runs.len(), 1);
+    let forwarded = runs[0].signal.as_ref().expect("signal forwarded to run");
+    // CancellationToken equality is token identity.
+    assert_eq!(*forwarded, signal);
 }

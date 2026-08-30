@@ -446,6 +446,7 @@ fn build_request(
     let _ = effective_location;
 
     Ok(HttpRequest {
+        signal: None,
         method: HttpMethod::Post,
         url,
         headers,
@@ -543,7 +544,7 @@ async fn run_stream(
         resolve_location(options)?;
     }
 
-    let request = build_request(
+    let mut request = build_request(
         model,
         api_key.as_deref(),
         project.as_deref(),
@@ -551,6 +552,7 @@ async fn run_stream(
         options.and_then(|options| options.base.base.headers.as_ref()),
         params,
     )?;
+    request.signal = options.and_then(|options| options.base.base.signal.clone());
 
     let fetch = options
         .and_then(|options| options.base.base.fetch.clone())

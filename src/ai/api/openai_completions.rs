@@ -1781,6 +1781,7 @@ async fn request_completions(
         .unwrap_or_else(default_fetch);
     let base_url = model.base_url.trim_end_matches('/');
     let request = HttpRequest {
+        signal: options.and_then(|options| options.base.base.signal.clone()),
         method: HttpMethod::Post,
         url: format!("{base_url}/chat/completions"),
         headers,

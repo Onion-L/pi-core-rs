@@ -1549,6 +1549,7 @@ async fn run_stream(
         .unwrap_or_else(default_fetch);
     let url = resolve_codex_url(Some(&model.base_url));
     let request = HttpRequest {
+        signal: options.and_then(|options| options.base.base.signal.clone()),
         method: HttpMethod::Post,
         url,
         headers,

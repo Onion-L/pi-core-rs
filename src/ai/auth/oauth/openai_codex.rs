@@ -86,6 +86,7 @@ impl OpenAICodexOAuth {
         signal: &CancellationToken,
     ) -> Result<(u16, String), String> {
         let request = HttpRequest {
+            signal: None,
             method,
             url: url.to_string(),
             headers: vec![("content-type".to_string(), content_type.to_string())],

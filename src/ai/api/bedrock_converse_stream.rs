@@ -2661,6 +2661,7 @@ async fn dispatch_wire(
 
     let response = fetch
         .fetch(HttpRequest {
+            signal: options.base.base.signal.clone(),
             method: crate::ai::utils::http::HttpMethod::Post,
             url: target.url,
             headers,

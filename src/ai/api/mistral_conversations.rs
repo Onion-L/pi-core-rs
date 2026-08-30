@@ -740,6 +740,7 @@ async fn request_mistral_stream(
     let mut payload = payload;
     to_mistral_wire_payload(&mut payload);
     let request = HttpRequest {
+        signal: options.and_then(|options| options.base.base.signal.clone()),
         method: HttpMethod::Post,
         url: format!("{base_url}/v1/chat/completions"),
         headers,

@@ -445,6 +445,7 @@ async fn run_stream(
         .and_then(|options| options.base.base.fetch.clone())
         .unwrap_or_else(default_fetch);
     let request = HttpRequest {
+        signal: options.and_then(|options| options.base.base.signal.clone()),
         method: HttpMethod::Post,
         url: format!(
             "{base_url}/deployments/{deployment_name}/responses?api-version={api_version}"

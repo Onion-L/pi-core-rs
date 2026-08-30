@@ -68,6 +68,7 @@ impl XaiOAuth {
         let response = self
             .fetch
             .fetch(HttpRequest {
+                signal: None,
                 method: HttpMethod::Post,
                 url: url.to_string(),
                 headers: vec![

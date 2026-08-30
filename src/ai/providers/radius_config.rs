@@ -157,6 +157,7 @@ pub async fn load_radius_gateway_config(
     let fetch = fetch.unwrap_or_else(crate::ai::utils::reqwest_fetch::default_fetch);
     let response = fetch
         .fetch(crate::ai::utils::http::HttpRequest {
+            signal: None,
             method: crate::ai::utils::http::HttpMethod::Get,
             url: format!("{gateway}/v1/config"),
             headers,

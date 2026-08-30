@@ -80,6 +80,7 @@ impl AnthropicOAuth {
         signal: &CancellationToken,
     ) -> Result<String, String> {
         let request = HttpRequest {
+            signal: None,
             method: HttpMethod::Post,
             url: url.to_string(),
             headers: vec![

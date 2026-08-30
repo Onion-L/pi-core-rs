@@ -17,6 +17,10 @@ pub struct HttpRequest {
     pub url: String,
     pub headers: Vec<(String, String)>,
     pub body: HttpBody,
+    /// The abort signal riding with the request (the `init.signal` of the
+    /// TypeScript `fetch` call). Transports observe it to cancel in-flight
+    /// work; `None` when the caller did not provide one.
+    pub signal: Option<tokio_util::sync::CancellationToken>,
 }
 
 /// Supported request methods.

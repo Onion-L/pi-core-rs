@@ -65,6 +65,15 @@ impl HttpFetch for ReqwestFetch {
         request: HttpRequest,
     ) -> BoxFuture<'a, Result<HttpResponse, HttpFetchError>> {
         Box::pin(async move {
+            // An already-aborted signal rejects before any traffic, matching
+            // fetch's behavior on a pre-aborted `init.signal`.
+            if request
+                .signal
+                .as_ref()
+                .is_some_and(|signal| signal.is_cancelled())
+            {
+                return Err(HttpFetchError::Cancelled);
+            }
             let client = self.client_for(&request.url)?;
             let method = reqwest::Method::from_bytes(request.method.as_str().as_bytes())
                 .map_err(|error| HttpFetchError::Request(error.to_string()))?;
@@ -81,10 +90,16 @@ impl HttpFetch for ReqwestFetch {
                 HttpBody::Json(value) => builder.json(value),
             };
 
-            let response = builder
-                .send()
-                .await
-                .map_err(|error| HttpFetchError::Request(format!("{error}")))?;
+            let send = builder.send();
+            let response = match request.signal.as_ref() {
+                Some(signal) => tokio::select! {
+                    response = send => response.map_err(|error| HttpFetchError::Request(format!("{error}")))?,
+                    () = signal.cancelled() => return Err(HttpFetchError::Cancelled),
+                },
+                None => send
+                    .await
+                    .map_err(|error| HttpFetchError::Request(format!("{error}")))?,
+            };
 
             let status = response.status().as_u16();
             let headers: Vec<(String, String)> = response
@@ -97,9 +112,15 @@ impl HttpFetch for ReqwestFetch {
                     )
                 })
                 .collect();
-            let body = response
-                .bytes_stream()
-                .map(|chunk| chunk.map_err(|error| HttpFetchError::Body(format!("{error}"))));
+            let signal = request.signal.clone();
+            let body = response.bytes_stream().map(move |chunk| {
+                // Post-cancellation chunks surface as a cancellation error;
+                // adapter-level signal watches still cut reads off earlier.
+                if signal.as_ref().is_some_and(|signal| signal.is_cancelled()) {
+                    return Err(HttpFetchError::Cancelled);
+                }
+                chunk.map_err(|error| HttpFetchError::Body(format!("{error}")))
+            });
 
             Ok(HttpResponse {
                 status,

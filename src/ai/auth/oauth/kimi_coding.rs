@@ -84,6 +84,7 @@ impl KimiCodingOAuth {
             .extend_pairs(fields.iter().map(|(key, value)| (*key, *value)))
             .finish();
         let request = HttpRequest {
+            signal: None,
             method: HttpMethod::Post,
             url: url.to_string(),
             headers: vec![

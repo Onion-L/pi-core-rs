@@ -190,6 +190,7 @@ pub(crate) async fn ecs_container_credentials(
 
     let response = fetch
         .fetch(HttpRequest {
+            signal: None,
             method: HttpMethod::Get,
             url,
             headers,
@@ -287,6 +288,7 @@ pub(crate) async fn web_identity_credentials(
 
     let response = fetch
         .fetch(HttpRequest {
+            signal: None,
             method: HttpMethod::Post,
             url,
             headers: vec![
@@ -334,6 +336,15 @@ mod tests {
     use super::*;
     use crate::ai::utils::http::{HttpFetchError, HttpResponse};
     use futures::future::BoxFuture;
+
+    /// The credential cache is process-global; the provider tests serialize
+    /// on it (each one clears the cache on entry).
+    async fn cache_lock() -> tokio::sync::MutexGuard<'static, ()> {
+        static LOCK: std::sync::OnceLock<tokio::sync::Mutex<()>> = std::sync::OnceLock::new();
+        LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
+            .lock()
+            .await
+    }
 
     fn coerce(fetch: &Arc<CannedFetch>) -> Arc<dyn HttpFetch> {
         Arc::clone(fetch) as Arc<dyn HttpFetch>
@@ -452,7 +463,8 @@ mod tests {
 
     #[tokio::test]
     async fn ecs_relative_uri_fetches_the_container_metadata_endpoint() {
-        crate::ai::utils::aws_credentials::clear_aws_credential_cache_for_tests();
+        let _guard = cache_lock().await;
+        clear_aws_credential_cache_for_tests();
         let env = scoped_env(&[("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "/v2/creds/abc")]);
         let fetch = CannedFetch::new(vec![ecs_body()]);
         let credentials = ecs_container_credentials(&coerce(&fetch), Some(&env))
@@ -477,6 +489,7 @@ mod tests {
 
     #[tokio::test]
     async fn ecs_full_uri_sends_the_authorization_token() {
+        let _guard = cache_lock().await;
         clear_aws_credential_cache_for_tests();
         let env = scoped_env(&[
             (
@@ -507,6 +520,7 @@ mod tests {
 
     #[tokio::test]
     async fn ecs_credentials_are_cached_until_expired() {
+        let _guard = cache_lock().await;
         clear_aws_credential_cache_for_tests();
         let env = scoped_env(&[("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "/v2/creds/cache")]);
         let fetch = CannedFetch::new(vec![ecs_body()]);
@@ -525,6 +539,7 @@ mod tests {
 
     #[tokio::test]
     async fn web_identity_exchanges_the_token_through_sts() {
+        let _guard = cache_lock().await;
         clear_aws_credential_cache_for_tests();
         let token_file = write_token_file("projected-service-account-token\n");
         let env = scoped_env(&[

@@ -87,16 +87,10 @@ async fn run_generation(
         url: format!("{}/chat/completions", model.base_url.trim_end_matches('/')),
         headers: build_headers(model, options, &api_key),
         body: HttpBody::Json(params),
+        // The OpenAI SDK forwards the abort signal into its HTTP request; an
+        // already-aborted signal rejects at the transport, like fetch.
+        signal: options.and_then(|options| options.signal.clone()),
     };
-
-    // The OpenAI SDK rejects immediately when the signal is already aborted.
-    // The transport cannot observe the token, so check before sending.
-    if options
-        .and_then(|options| options.signal.as_ref())
-        .is_some_and(|token| token.is_cancelled())
-    {
-        return Err("Request aborted".to_string());
-    }
 
     let response = retry_provider_request(
         || {

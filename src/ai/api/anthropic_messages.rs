@@ -1306,6 +1306,7 @@ async fn run_stream(
     )?;
 
     let request = HttpRequest {
+        signal: options.and_then(|options| options.base.base.signal.clone()),
         method: HttpMethod::Post,
         url: plan.url.clone(),
         headers: plan.headers.clone(),

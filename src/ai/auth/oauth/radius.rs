@@ -124,6 +124,7 @@ impl RadiusOAuth {
             headers.push(("content-type".to_string(), content_type.to_string()));
         }
         let request = HttpRequest {
+            signal: None,
             method,
             url: url.to_string(),
             headers,

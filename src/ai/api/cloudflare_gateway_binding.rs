@@ -24,9 +24,8 @@
 //! TypeScript-version behaviors that have no Rust transport equivalent: the
 //! fetch `Request`/`init` split (the Rust [`HttpRequest`] is the single,
 //! final request form, so init-headers-replace-request-headers and
-//! `signal: null` clearing do not apply) and forwarding the fetch abort
-//! signal to the binding (the [`HttpFetch`] transport cannot observe one;
-//! retry-level cancellation handles aborts, as in the other adapters).
+//! `signal: null` clearing do not apply). The request's abort signal
+//! forwards to the binding run like the TypeScript fetch's `init.signal`.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -69,7 +68,14 @@ pub trait AiGatewayBindingGateway: Send + Sync {
     fn run<'a>(
         &'a self,
         data: AiGatewayUniversalRequest,
+        options: AiGatewayRunOptions,
     ) -> BoxFuture<'a, Result<HttpResponse, HttpFetchError>>;
+}
+
+/// Port of the binding run options (`{ signal }`).
+#[derive(Clone, Debug, Default)]
+pub struct AiGatewayRunOptions {
+    pub signal: Option<tokio_util::sync::CancellationToken>,
 }
 
 /// Structural port of the Workers AI binding's gateway surface (`env.AI`).
@@ -227,7 +233,14 @@ impl HttpFetch for GatewayBindingFetch {
                 query,
             };
             let gateway = self.binding.gateway(&self.gateway);
-            gateway.run(data).await
+            gateway
+                .run(
+                    data,
+                    AiGatewayRunOptions {
+                        signal: request.signal.clone(),
+                    },
+                )
+                .await
         })
     }
 }

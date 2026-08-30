@@ -42,7 +42,18 @@ impl HttpFetch for RecordingFetch {
         &'a self,
         request: HttpRequest,
     ) -> futures::future::BoxFuture<'a, Result<HttpResponse, HttpFetchError>> {
-        self.requests.lock().unwrap().push(request);
+        self.requests.lock().unwrap().push(request.clone());
+        // The TS mock stands in for the OpenAI SDK, which rejects when the
+        // signal is already aborted.
+        if request
+            .signal
+            .as_ref()
+            .is_some_and(|signal| signal.is_cancelled())
+        {
+            return Box::pin(std::future::ready(Err(HttpFetchError::Request(
+                "Request aborted".to_string(),
+            ))));
+        }
         let body = self.body.clone();
         Box::pin(async move {
             Ok(HttpResponse {
@@ -202,6 +213,14 @@ async fn passes_through_abort_signal_and_returns_aborted_result() {
 
     assert_eq!(output.stop_reason, ImagesStopReason::Aborted);
     assert_eq!(output.error_message.as_deref(), Some("Request aborted"));
+    // The TS case asserts the SDK requestOptions carried the signal; the
+    // Rust transport sees it on the request.
+    let requests = fetch.requests.lock().unwrap();
+    let signal = requests[0]
+        .signal
+        .as_ref()
+        .expect("signal forwarded with the request");
+    assert!(signal.is_cancelled());
 }
 
 #[tokio::test]
