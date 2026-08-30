@@ -1595,6 +1595,7 @@ fn set_budget(budgets: &mut ThinkingBudgets, level: ThinkingLevel, budget: u64) 
 mod tests {
     use super::*;
     use crate::ai::types::ProviderRequestOptions;
+    use crate::ai::utils::http::{HttpFetchError, HttpResponse};
 
     // ------------------------------------------------------------------
     // Endpoint resolution (bedrock-endpoint-resolution.test.ts cases,
@@ -2048,6 +2049,232 @@ mod tests {
             true
         ));
     }
+
+    // ------------------------------------------------------------------
+    // Remote credential providers (the AWS SDK default chain pieces:
+    // web identity/IRSA and ECS container credentials).
+
+    /// Serves one canned body per request and records the requests.
+    struct CredFetch {
+        body: String,
+        requests: std::sync::Mutex<Vec<HttpRequest>>,
+    }
+
+    impl CredFetch {
+        fn new(body: String) -> std::sync::Arc<Self> {
+            std::sync::Arc::new(Self {
+                body,
+                requests: std::sync::Mutex::new(Vec::new()),
+            })
+        }
+
+        fn request_count(&self) -> usize {
+            self.requests.lock().unwrap().len()
+        }
+    }
+
+    impl HttpFetch for CredFetch {
+        fn fetch<'a>(
+            &'a self,
+            request: HttpRequest,
+        ) -> futures::future::BoxFuture<'a, Result<HttpResponse, HttpFetchError>> {
+            self.requests.lock().unwrap().push(request.clone());
+            let body = self.body.clone();
+            Box::pin(async move {
+                Ok(HttpResponse {
+                    status: 200,
+                    headers: Vec::new(),
+                    body: Box::pin(futures::stream::iter(vec![Ok(bytes::Bytes::from(body))])),
+                })
+            })
+        }
+    }
+
+    fn clear_ambient_aws_env() {
+        for name in [
+            "AWS_ACCESS_KEY_ID",
+            "AWS_SECRET_ACCESS_KEY",
+            "AWS_SESSION_TOKEN",
+            "AWS_PROFILE",
+            "AWS_REGION",
+            "AWS_DEFAULT_REGION",
+            "AWS_BEARER_TOKEN_BEDROCK",
+            "AWS_BEDROCK_SKIP_AUTH",
+            "AWS_WEB_IDENTITY_TOKEN_FILE",
+            "AWS_ROLE_ARN",
+            "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+            "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+        ] {
+            remove_env(name);
+        }
+    }
+
+    fn irsa_env(token_file: &str) -> crate::ai::types::ProviderEnv {
+        [
+            ("AWS_WEB_IDENTITY_TOKEN_FILE", token_file),
+            ("AWS_ROLE_ARN", "arn:aws:iam::123:role/bedrock"),
+            ("AWS_ROLE_SESSION_NAME", "pi-session"),
+        ]
+        .iter()
+        .map(|(name, value)| (name.to_string(), value.to_string()))
+        .collect()
+    }
+
+    fn write_web_identity_token() -> String {
+        let path = std::env::temp_dir().join(format!(
+            "pi-bedrock-irsa-{}-{}",
+            std::process::id(),
+            crate::ai::utils::uuid::uuidv7()
+        ));
+        std::fs::write(&path, "projected-token").expect("write token file");
+        path.to_string_lossy().to_string()
+    }
+
+    fn wire_auth(
+        model: &Model,
+        options: &BedrockOptions,
+        fetch: &std::sync::Arc<CredFetch>,
+    ) -> impl std::future::Future<Output = WireAuth> {
+        let model = model.clone();
+        let options = options.clone();
+        let fetch = std::sync::Arc::clone(fetch) as std::sync::Arc<dyn HttpFetch>;
+        async move {
+            resolve_wire_target(&model, &options, "20260830T000000Z", &fetch)
+                .await
+                .expect("wire target resolves")
+                .auth
+        }
+    }
+
+    // The env guard intentionally spans the await: the remote-credential
+    // chain reads ambient env, so ambient-env tests must not interleave.
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test]
+    async fn web_identity_credentials_feed_the_sigv4_wire_auth() {
+        let _guard = env_lock();
+        clear_ambient_aws_env();
+        crate::ai::utils::aws_credentials::clear_aws_credential_cache_for_tests();
+        let token_file = write_web_identity_token();
+        let sts_body = "<AssumeRoleWithWebIdentityResponse>\
+             <AssumeRoleWithWebIdentityResult><Credentials>\
+             <AccessKeyId>ASIAIRSA</AccessKeyId>\
+             <SecretAccessKey>irsa-secret</SecretAccessKey>\
+             <SessionToken>irsa-session</SessionToken>\
+             <Expiration>2030-01-01T00:00:00Z</Expiration>\
+             </Credentials></AssumeRoleWithWebIdentityResult>\
+             </AssumeRoleWithWebIdentityResponse>"
+            .to_string();
+        let fetch = CredFetch::new(sts_body);
+        let mut options = base_options();
+        options.base.base.env = Some(irsa_env(&token_file));
+
+        match wire_auth(
+            &bedrock_model("us.anthropic.claude-opus-4-8"),
+            &options,
+            &fetch,
+        )
+        .await
+        {
+            WireAuth::SigV4 {
+                access_key_id,
+                secret_access_key,
+                session_token,
+            } => {
+                assert_eq!(access_key_id, "ASIAIRSA");
+                assert_eq!(secret_access_key, "irsa-secret");
+                assert_eq!(session_token.as_deref(), Some("irsa-session"));
+            }
+            other => panic!("expected SigV4 auth, got {other:?}"),
+        }
+        let _ = std::fs::remove_file(&token_file);
+    }
+
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test]
+    async fn static_env_keys_win_over_web_identity() {
+        let _guard = env_lock();
+        clear_ambient_aws_env();
+        crate::ai::utils::aws_credentials::clear_aws_credential_cache_for_tests();
+        let token_file = write_web_identity_token();
+        // The canned STS body would never satisfy a static-key resolution;
+        // any fetch means the chain fell through incorrectly.
+        let fetch = CredFetch::new("{\"AccessKeyId\":\"bad\"}".to_string());
+        let mut options = base_options();
+        options.base.base.env = Some(irsa_env(&token_file));
+        options
+            .base
+            .base
+            .env
+            .as_mut()
+            .unwrap()
+            .insert("AWS_ACCESS_KEY_ID".to_string(), "AKIASTATIC".to_string());
+        options.base.base.env.as_mut().unwrap().insert(
+            "AWS_SECRET_ACCESS_KEY".to_string(),
+            "static-secret".to_string(),
+        );
+
+        match wire_auth(
+            &bedrock_model("us.anthropic.claude-opus-4-8"),
+            &options,
+            &fetch,
+        )
+        .await
+        {
+            WireAuth::SigV4 {
+                access_key_id,
+                secret_access_key,
+                ..
+            } => {
+                assert_eq!(access_key_id, "AKIASTATIC");
+                assert_eq!(secret_access_key, "static-secret");
+            }
+            other => panic!("expected SigV4 auth, got {other:?}"),
+        }
+        assert_eq!(fetch.request_count(), 0, "no remote provider consulted");
+        let _ = std::fs::remove_file(&token_file);
+    }
+
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test]
+    async fn ecs_container_credentials_feed_the_sigv4_wire_auth() {
+        let _guard = env_lock();
+        clear_ambient_aws_env();
+        crate::ai::utils::aws_credentials::clear_aws_credential_cache_for_tests();
+        let ecs_body = serde_json::json!({
+            "AccessKeyId": "ASIAECS",
+            "SecretAccessKey": "ecs-secret",
+            "Token": "ecs-session",
+            "Expiration": "2030-01-01T00:00:00Z",
+        })
+        .to_string();
+        let fetch = CredFetch::new(ecs_body);
+        let mut options = base_options();
+        options.base.base.env = Some(
+            [("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "/v2/creds/abc")]
+                .iter()
+                .map(|(name, value)| (name.to_string(), value.to_string()))
+                .collect(),
+        );
+
+        match wire_auth(
+            &bedrock_model("us.anthropic.claude-opus-4-8"),
+            &options,
+            &fetch,
+        )
+        .await
+        {
+            WireAuth::SigV4 {
+                access_key_id,
+                secret_access_key,
+                session_token,
+            } => {
+                assert_eq!(access_key_id, "ASIAECS");
+                assert_eq!(secret_access_key, "ecs-secret");
+                assert_eq!(session_token.as_deref(), Some("ecs-session"));
+            }
+            other => panic!("expected SigV4 auth, got {other:?}"),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2232,6 +2459,7 @@ struct WireTarget {
     auth: WireAuth,
 }
 
+#[derive(Debug)]
 enum WireAuth {
     Bearer(String),
     SigV4 {
@@ -2241,10 +2469,11 @@ enum WireAuth {
     },
 }
 
-fn resolve_wire_target(
+async fn resolve_wire_target(
     model: &Model,
     options: &BedrockOptions,
     now_amz_date: &str,
+    fetch: &std::sync::Arc<dyn HttpFetch>,
 ) -> Result<WireTarget, BedrockError> {
     let env = options.base.base.env.as_ref();
     let config = resolve_dispatch_config(model, options);
@@ -2295,6 +2524,18 @@ fn resolve_wire_target(
             secret_access_key: secret,
             session_token: token,
         }
+    } else if options_profile.is_none()
+        && let Some(result) =
+            crate::ai::utils::aws_credentials::web_identity_credentials(fetch, env, &region).await
+    {
+        // The SDK default chain resolves web identity (IRSA) before the
+        // shared config profiles and the container provider.
+        let (access, secret, token) = result.map_err(BedrockError::transport)?;
+        WireAuth::SigV4 {
+            access_key_id: access,
+            secret_access_key: secret,
+            session_token: token,
+        }
     } else if let Some(profile) = &config.profile
         && let Some((access, secret, token)) =
             profile_credentials(profile, std::env::var("HOME").ok().as_deref())
@@ -2304,11 +2545,20 @@ fn resolve_wire_target(
             secret_access_key: secret,
             session_token: token,
         }
+    } else if let Some(result) =
+        crate::ai::utils::aws_credentials::ecs_container_credentials(fetch, env).await
+    {
+        let (access, secret, token) = result.map_err(BedrockError::transport)?;
+        WireAuth::SigV4 {
+            access_key_id: access,
+            secret_access_key: secret,
+            session_token: token,
+        }
     } else {
         return Err(BedrockError::transport(
             "Could not resolve Bedrock credentials: configure AWS_BEARER_TOKEN_BEDROCK, \
-             AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY, an AWS profile, or set \
-             AWS_BEDROCK_SKIP_AUTH=1",
+             AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY, an AWS profile, container/web-identity \
+             credentials, or set AWS_BEDROCK_SKIP_AUTH=1",
         ));
     };
     let _ = now_amz_date;
@@ -2354,7 +2604,7 @@ async fn dispatch_wire(
         .clone()
         .unwrap_or_else(crate::ai::utils::reqwest_fetch::default_fetch);
     let amz_date = aws_amz_date_now();
-    let target = resolve_wire_target(model, options, &amz_date)?;
+    let target = resolve_wire_target(model, options, &amz_date, &fetch).await?;
 
     let body = serde_json::to_vec(&input)
         .map_err(|error| BedrockError::transport(format!("serialize request: {error}")))?;

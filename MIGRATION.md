@@ -66,7 +66,7 @@ upstream package).
 | `src/api/azure-openai-responses.lazy.ts` | `src/ai/providers/apis.rs` | done |
 | `src/api/azure-openai-responses.ts` | `src/ai/api/azure_openai_responses.rs` | done |
 | `src/api/bedrock-converse-stream.lazy.ts` | `src/ai/providers/apis.rs` | done (direct dispatch adapter; the Bun `setBedrockProviderModule` override has no Rust counterpart) |
-| `src/api/bedrock-converse-stream.ts` | `src/ai/api/bedrock_converse_stream.rs` | partial (SigV4 with the documented AWS vector, bearer/skip-auth/static/profile credential resolution, endpoint+region resolution, vnd.amazon.eventstream framing are done; the AWS SDK default credential chain's web-identity (IRSA) and ECS container credential fetching are missing — the provider reports them configured but the wire layer lacks the STS `AssumeRoleWithWebIdentity` and ECS container-metadata fetches) |
+| `src/api/bedrock-converse-stream.ts` | `src/ai/api/bedrock_converse_stream.rs` + `src/ai/utils/aws_credentials.rs` | done (SigV4 with the documented AWS vector, bearer/skip-auth/static/profile credential resolution, endpoint+region resolution, vnd.amazon.eventstream framing; the AWS SDK default-chain remote providers the TS adapter delegates to are ported in `aws_credentials.rs` — web identity (IRSA) via the STS `AssumeRoleWithWebIdentity` form call and ECS container credentials via the `169.254.170.2`/full-URI metadata endpoints, both cached until expiry) |
 | `src/api/cloudflare-gateway-binding.ts` | `src/ai/api/cloudflare_gateway_binding.rs` | partial (Request/init header merging and the binding run are ported; forwarding the resolved abort signal into the transport run — the TS `signal` on `binding.gateway(...).run(...)` — is missing because `HttpFetch` requests carry no signal yet) |
 | `src/api/cloudflare.ts` | `src/ai/api/cloudflare.rs` | done |
 | `src/api/constrained-sampling.ts` | `src/ai/api/constrained_sampling.rs` | done |
@@ -408,9 +408,6 @@ Kept language/runtime differences:
 
 Tracked implementable gaps (must close before the migration is complete):
 
-- Bedrock web-identity (IRSA) and ECS container credential fetching, i.e.
-  the parts of the AWS SDK default chain the TS adapter delegates to —
-  `src/api/bedrock-converse-stream.ts` row.
 - Abort-signal propagation into the HTTP transport (Cloudflare gateway
   binding run signal, OpenRouter Images in-flight cancel) — the
   `src/api/cloudflare-gateway-binding.ts` and `src/api/openrouter-images.ts`

@@ -1,6 +1,7 @@
 //! Port of `pi-core/ai/src/utils` shared helpers.
 
 pub mod abort;
+pub mod aws_credentials;
 pub mod deferred_tools;
 pub mod diagnostics;
 pub mod error_body;
