@@ -578,7 +578,7 @@ impl<S: TelemetrySpan + ?Sized> TelemetrySpanExt for S {}
 pub type TelemetryAttributeType = TelemetryAttributeKind;
 
 /// Port of `TelemetryAttributeMetadata.cardinality`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TelemetryCardinality {
     Low,
@@ -588,7 +588,7 @@ pub enum TelemetryCardinality {
 /// Port of `TelemetryAttributeDefinition`. The `type`-tagged union becomes a
 /// flattened enum; `values`/`examples` travel with each variant exactly as in
 /// the TypeScript shape.
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TelemetryAttributeDefinition {
     pub description: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -600,7 +600,7 @@ pub struct TelemetryAttributeDefinition {
 }
 
 /// The `type`-tagged member of `TelemetryAttributeDefinition`.
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type")]
 pub enum TelemetryAttributeKind {
     #[serde(rename = "string")]
@@ -649,7 +649,7 @@ pub enum TelemetryAttributeKind {
 
 /// Port of `TelemetryStartAttributeDefinition` (also used for event
 /// attributes, which share the same shape).
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TelemetryStartAttributeDefinition {
     #[serde(flatten)]
     pub attribute: TelemetryAttributeDefinition,
@@ -660,14 +660,14 @@ pub struct TelemetryStartAttributeDefinition {
 pub type TelemetryEventAttributeDefinition = TelemetryStartAttributeDefinition;
 
 /// Port of `TelemetryEventDefinition`.
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TelemetryEventDefinition {
     pub description: String,
     pub attributes: BTreeMap<String, TelemetryEventAttributeDefinition>,
 }
 
 /// Port of `TelemetryParentDefinition`.
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TelemetryParentDefinition {
     Any,
@@ -676,7 +676,7 @@ pub enum TelemetryParentDefinition {
 }
 
 /// Port of the `status` member of `TelemetrySpanDefinition`.
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TelemetrySpanStatusDefinition {
     #[serde(rename = "default")]
     pub default: TelemetryStatusDefault,
@@ -685,14 +685,14 @@ pub struct TelemetrySpanStatusDefinition {
 }
 
 /// The literal `"ok"` default status of a span definition.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TelemetryStatusDefault {
     Ok,
 }
 
 /// Port of `TelemetrySpanDefinition`.
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TelemetrySpanDefinition {
     pub description: String,
     pub parents: TelemetryParentDefinition,
@@ -706,7 +706,7 @@ pub struct TelemetrySpanDefinition {
 }
 
 /// Port of `TelemetrySchemaDefinition`.
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TelemetrySchemaDefinition {
     pub version: u64,
     pub spans: BTreeMap<String, TelemetrySpanDefinition>,

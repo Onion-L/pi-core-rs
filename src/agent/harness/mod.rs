@@ -9,6 +9,7 @@ pub mod reducer;
 pub mod session;
 pub mod skills;
 pub mod system_prompt;
+pub mod telemetry;
 pub mod tools;
 pub mod types;
 pub mod utils;
