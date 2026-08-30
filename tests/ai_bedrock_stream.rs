@@ -855,6 +855,97 @@ async fn omits_the_sdk_unknown_placeholder_instead_of_reporting_it_as_a_code() {
 }
 
 // ---------------------------------------------------------------------------
+// Provider error body passthrough (provider-error-body-regression.test.ts,
+// bedrock tier). The TypeScript suite mocks the AWS SDK so `client.send()`
+// rejects with a ServiceException carrying `$metadata.httpStatusCode` and a
+// `$response.body` string; the Rust port models the same SDK error as a
+// `BedrockError` with extracted `status`/`body` fields.
+
+/// `streamSimpleBedrock(model, { messages: context.messages }, {})` with a
+/// `send()` rejection, as in the TypeScript regression suite.
+async fn run_send_error(
+    model_id: &str,
+    error: BedrockError,
+) -> pi_core::ai::types::AssistantMessage {
+    stream_from_items(
+        &base_model(model_id),
+        &Context {
+            messages: vec![Message::User(UserMessage {
+                role: pi_core::ai::types::RoleUser,
+                content: UserContent::Text("hi".to_string()),
+                timestamp: 0,
+            })],
+            ..Default::default()
+        },
+        Some(&BedrockOptions {
+            base: StreamOptions {
+                cache_retention: Some(CacheRetention::None),
+                ..Default::default()
+            },
+            ..Default::default()
+        }),
+        BedrockDispatchResponse {
+            send_error: Some(error),
+            ..empty_items()
+        },
+    )
+    .result()
+    .await
+}
+
+#[tokio::test]
+async fn surfaces_the_gateway_body_instead_of_unknown_unknown_error() {
+    // Object.assign(new Error("UnknownError"), { name: "UnknownError",
+    // $metadata: { httpStatusCode: 403 }, $response: { statusCode: 403,
+    // body: '{"message":"blocked by gateway WAF"}' } })
+    let message = run_send_error(
+        "us.anthropic.claude-opus-4-8",
+        BedrockError {
+            name: "UnknownError".to_string(),
+            message: "UnknownError".to_string(),
+            status: Some(403),
+            body: Some(r#"{"message":"blocked by gateway WAF"}"#.to_string()),
+            service_exception: true,
+            ..Default::default()
+        },
+    )
+    .await;
+
+    assert_eq!(message.stop_reason, StopReason::Error);
+    let error_message = message.error_message.expect("error message present");
+    assert!(error_message.contains("403"));
+    assert!(error_message.contains("blocked by gateway WAF"));
+    assert!(!error_message.contains("Unknown: UnknownError"));
+}
+
+// The TypeScript fixture's `$response.body` is a node stream (`pipe`
+// function), which normalizeProviderError ignores so the SDK validation
+// message survives. The stream-sniffing mechanic has no Rust analog: a typed
+// `BedrockError` simply carries no body, which is the same observable
+// outcome — the message is preserved verbatim.
+#[tokio::test]
+async fn preserves_the_sdk_validation_message_when_the_response_body_is_a_stream() {
+    let message = run_send_error(
+        "global.anthropic.claude-opus-5",
+        BedrockError {
+            name: "ValidationException".to_string(),
+            message: "Invocation of model ID anthropic.claude-opus-5 with on-demand throughput isn't supported. Retry with an inference profile.".to_string(),
+            status: Some(400),
+            body: None,
+            service_exception: true,
+            ..Default::default()
+        },
+    )
+    .await;
+
+    assert_eq!(message.stop_reason, StopReason::Error);
+    let error_message = message.error_message.expect("error message present");
+    assert!(error_message.contains("on-demand throughput isn't supported"));
+    assert!(error_message.contains("inference profile"));
+    assert!(!error_message.contains("_readableState"));
+}
+
+// ---------------------------------------------------------------------------
 // Bedrock constrained sampling and message conversion
 
 async fn capture_tool_payload(context: Context, model: &Model) -> Value {

@@ -237,4 +237,106 @@ mod tests {
         );
         assert_eq!(get_env_api_key("amazon-bedrock", None), None);
     }
+
+    // Port of "does not treat generic GitHub tokens as GitHub Copilot
+    // credentials". The scoped env carries GH_TOKEN/GITHUB_TOKEN; neither is a
+    // Copilot credential source. Ambient COPILOT_GITHUB_TOKEN would leak
+    // through the process-env fallback, so share the env lock.
+    #[test]
+    fn generic_github_tokens_are_not_copilot_credentials() {
+        let _guard = crate::ai::test_env_lock();
+        let env = env_from(&[("GH_TOKEN", "gh-token"), ("GITHUB_TOKEN", "github-token")]);
+        assert_eq!(find_env_keys("github-copilot", Some(&env)), None);
+        assert_eq!(get_env_api_key("github-copilot", Some(&env)), None);
+    }
+
+    // Port of "resolves GitHub Copilot credentials from
+    // COPILOT_GITHUB_TOKEN": the dedicated env var wins over generic GitHub
+    // tokens.
+    #[test]
+    fn copilot_credentials_resolve_from_copilot_github_token() {
+        let _guard = crate::ai::test_env_lock();
+        let env = env_from(&[
+            ("COPILOT_GITHUB_TOKEN", "copilot-token"),
+            ("GH_TOKEN", "gh-token"),
+            ("GITHUB_TOKEN", "github-token"),
+        ]);
+        assert_eq!(
+            find_env_keys("github-copilot", Some(&env)),
+            Some(vec!["COPILOT_GITHUB_TOKEN".to_string()])
+        );
+        assert_eq!(
+            get_env_api_key("github-copilot", Some(&env)),
+            Some("copilot-token".to_string())
+        );
+    }
+
+    // Port of "resolves ZAI China Coding Plan credentials from
+    // ZAI_CODING_CN_API_KEY".
+    #[test]
+    fn zai_coding_cn_resolves_from_zai_coding_cn_api_key() {
+        let _guard = crate::ai::test_env_lock();
+        let env = env_from(&[("ZAI_CODING_CN_API_KEY", "zai-coding-cn-token")]);
+        assert_eq!(
+            find_env_keys("zai-coding-cn", Some(&env)),
+            Some(vec!["ZAI_CODING_CN_API_KEY".to_string()])
+        );
+        assert_eq!(
+            get_env_api_key("zai-coding-cn", Some(&env)),
+            Some("zai-coding-cn-token".to_string())
+        );
+    }
+
+    // Port of "reports ANTHROPIC_AUTH_TOKEN but preserves OAuth token API key
+    // lookup": all three env vars are reported, and the first non-bearer
+    // candidate (the OAuth token) wins the key lookup.
+    #[test]
+    fn anthropic_reports_auth_token_and_oauth_wins_key_lookup() {
+        let _guard = crate::ai::test_env_lock();
+        let env = env_from(&[
+            ("ANTHROPIC_AUTH_TOKEN", "auth-token"),
+            ("ANTHROPIC_OAUTH_TOKEN", "oauth-token"),
+            ("ANTHROPIC_API_KEY", "api-key"),
+        ]);
+        assert_eq!(
+            find_env_keys("anthropic", Some(&env)),
+            Some(vec![
+                "ANTHROPIC_AUTH_TOKEN".to_string(),
+                "ANTHROPIC_OAUTH_TOKEN".to_string(),
+                "ANTHROPIC_API_KEY".to_string(),
+            ])
+        );
+        assert_eq!(
+            get_env_api_key("anthropic", Some(&env)),
+            Some("oauth-token".to_string())
+        );
+    }
+
+    // Port of "does not return ANTHROPIC_AUTH_TOKEN as an API key": the token
+    // is reported by discovery but never resolves to a key.
+    #[test]
+    fn anthropic_auth_token_alone_yields_no_api_key() {
+        let _guard = crate::ai::test_env_lock();
+        let env = env_from(&[("ANTHROPIC_AUTH_TOKEN", "auth-token")]);
+        assert_eq!(
+            find_env_keys("anthropic", Some(&env)),
+            Some(vec!["ANTHROPIC_AUTH_TOKEN".to_string()])
+        );
+        assert_eq!(get_env_api_key("anthropic", Some(&env)), None);
+    }
+
+    // Port of "preserves ANTHROPIC_OAUTH_TOKEN as an API key".
+    #[test]
+    fn anthropic_oauth_token_alone_is_the_api_key() {
+        let _guard = crate::ai::test_env_lock();
+        let env = env_from(&[("ANTHROPIC_OAUTH_TOKEN", "oauth-token")]);
+        assert_eq!(
+            find_env_keys("anthropic", Some(&env)),
+            Some(vec!["ANTHROPIC_OAUTH_TOKEN".to_string()])
+        );
+        assert_eq!(
+            get_env_api_key("anthropic", Some(&env)),
+            Some("oauth-token".to_string())
+        );
+    }
 }

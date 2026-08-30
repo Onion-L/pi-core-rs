@@ -233,3 +233,59 @@ async fn generate_images_resolves_the_final_assistant_images_result() {
         other => panic!("expected JSON request body, got {other:?}"),
     }
 }
+
+// Port of `provider-error-body-passthrough.test.ts`: a 403 from a gateway or
+// proxy carrying the real reason in the body. The TypeScript test mocks the
+// OpenAI SDK so `withResponse()` rejects with a `FakeAPIError` whose message
+// is the opaque `"403 status code (no body)"` while the parsed body stays on
+// `error.error`; here the gateway 403 with body flows through the stub
+// transport and the provider normalizes status + body. Dispatch runs through
+// `images::generate_images`, the port of the `images.ts` entry point the
+// TypeScript test imports.
+struct GatewayErrorFetch {
+    status: u16,
+    body: String,
+}
+
+impl HttpFetch for GatewayErrorFetch {
+    fn fetch<'a>(
+        &'a self,
+        _request: HttpRequest,
+    ) -> futures::future::BoxFuture<'a, Result<HttpResponse, HttpFetchError>> {
+        let status = self.status;
+        let body = self.body.clone();
+        Box::pin(async move {
+            Ok(HttpResponse {
+                status,
+                headers: vec![("content-type".to_string(), "application/json".to_string())],
+                body: Box::pin(futures::stream::iter(vec![Ok(bytes::Bytes::from(body))])),
+            })
+        })
+    }
+}
+
+#[tokio::test]
+async fn surfaces_the_http_body_reason_instead_of_the_opaque_sdk_message() {
+    let fetch = Arc::new(GatewayErrorFetch {
+        status: 403,
+        body: r#"{"error":"blocked by gateway WAF"}"#.to_string(),
+    });
+    let options = ImagesOptions {
+        api_key: Some("test".to_string()),
+        fetch: Some(fetch),
+        ..Default::default()
+    };
+
+    let output =
+        pi_core::ai::images::generate_images(&image_only_model(), &context(), Some(&options))
+            .await
+            .expect("dispatch resolves");
+
+    assert_eq!(output.stop_reason, ImagesStopReason::Error);
+    let error_message = output.error_message.expect("error message present");
+    // The status should be surfaced.
+    assert!(error_message.contains("403"));
+    // The body reason must not be swallowed by the opaque SDK message.
+    assert!(error_message.contains("blocked by gateway WAF"));
+    assert_ne!(error_message, "403 status code (no body)");
+}

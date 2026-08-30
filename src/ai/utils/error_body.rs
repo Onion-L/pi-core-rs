@@ -190,4 +190,77 @@ mod tests {
             "network failure"
         );
     }
+
+    // Port of "reads the parsed body off an openai APIError when the message is
+    // opaque". In TypeScript the parsed body lives on `error.error` and
+    // `pickBodyText` serializes it with `safeJsonStringify`; Rust providers
+    // perform that serialization when they build `ProviderErrorParts`, so the
+    // test runs the same serialization before normalizing.
+    #[test]
+    fn openai_parsed_body_surfaces_when_message_is_opaque() {
+        let parsed_body = serde_json::json!({"error": "blocked by gateway WAF"});
+        let norm = normalize(
+            Some(403),
+            Some(&safe_json_stringify(&parsed_body)),
+            "403 status code (no body)",
+        );
+        assert_eq!(norm.status, Some(403));
+        assert_eq!(
+            norm.body.as_deref(),
+            Some(r#"{"error":"blocked by gateway WAF"}"#)
+        );
+        assert!(!norm.message_carries_body);
+        let formatted = format_provider_error(&norm, None);
+        assert!(formatted.contains("403"));
+        assert!(formatted.contains("blocked by gateway WAF"));
+        assert_ne!(formatted, "403 status code (no body)");
+    }
+
+    // Port of "extracts status and body from a Bedrock-shaped
+    // ServiceException": status from `$metadata.httpStatusCode`, body from the
+    // `$response.body` string, message kept as the exception text.
+    #[test]
+    fn bedrock_service_exception_extracts_status_and_body() {
+        let norm = normalize(
+            Some(403),
+            Some(r#"{"message":"blocked by gateway WAF"}"#),
+            "UnknownError",
+        );
+        assert_eq!(norm.status, Some(403));
+        assert_eq!(
+            norm.body.as_deref(),
+            Some(r#"{"message":"blocked by gateway WAF"}"#)
+        );
+        assert_eq!(norm.message, "UnknownError");
+        assert!(!norm.message_carries_body);
+    }
+
+    // Port of "still surfaces a plain parsed JSON body object": the parsed
+    // object is serialized with insertion order preserved (serde_json
+    // preserve_order matches JSON.stringify).
+    #[test]
+    fn plain_parsed_json_object_body_is_serialized_to_string() {
+        let parsed_body =
+            serde_json::json!({"message": "schema validation failed", "field": "tools[0]"});
+        let norm = normalize(
+            Some(400),
+            Some(&safe_json_stringify(&parsed_body)),
+            "400 status code (no body)",
+        );
+        assert_eq!(
+            norm.body.as_deref(),
+            Some(r#"{"message":"schema validation failed","field":"tools[0]"}"#)
+        );
+        assert!(!norm.message_carries_body);
+    }
+
+    // N/A ports from error-body.test.ts:
+    // - "ignores a Bedrock response stream instead of serializing its
+    //   internals" and "ignores a class-instance response body without a pipe
+    //   method": the JS-only `pipe`/prototype sniffing has no Rust analog —
+    //   typed `ProviderErrorParts` cannot carry a stream or class instance as
+    //   a body.
+    // - "ignores a class-instance `error` field": same reasoning.
+    // - "JSON-stringifies a non-Error thrown value": Rust failures are always
+    //   typed, so there is no non-Error throw to stringify.
 }
