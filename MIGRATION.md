@@ -80,7 +80,7 @@ upstream package).
 | `src/api/mistral-conversations.lazy.ts` | `src/ai/providers/apis.rs` | done |
 | `src/api/mistral-conversations.ts` | `src/ai/api/mistral_conversations.rs` | done |
 | `src/api/openai-codex-responses.lazy.ts` | `src/ai/providers/apis.rs` | done |
-| `src/api/openai-codex-responses.ts` | `src/ai/api/openai_codex_responses.rs` | partial (SSE transport with request shape, URL resolution, retry policy, Codex event mapping, and error taxonomy ported; the WebSocket transport (`responses_websockets=2026-02-06`) with session cache and SSE fallback, and zstd SSE request-body compression are missing) |
+| `src/api/openai-codex-responses.ts` | `src/ai/api/openai_codex_responses.rs` + `src/ai/api/openai_codex_websocket.rs` | done (SSE path with request shape, URL resolution, retry policy, Codex event mapping, error taxonomy, and zstd request-body compression; WebSocket transport over `responses_websockets=2026-02-06` with the account-scoped session cache, idle/age expiry, continuation deltas, debug stats, connect/idle timeouts, and SSE fallback; default connector is tokio-tungstenite, injectable for tests) |
 | `src/api/openai-completions.lazy.ts` | `src/ai/providers/apis.rs` | done |
 | `src/api/openai-completions.ts` | `src/ai/api/openai_completions.rs` | done |
 | `src/api/openai-prompt-cache.ts` | `src/ai/api/openai_completions.rs` | done |
@@ -277,7 +277,7 @@ upstream package).
 | `test/cloudflare-gateway-binding.test.ts` | `tests/ai_cloudflare_gateway_binding.rs` | partial (init-headers merge and Request-input handling ported; the abort-signal forwarding cases (including `signal: null` clearing) need the transport-level signal plumbed through the binding run) |
 | `test/cloudflare-stream.test.ts` | `tests/ai_cloudflare_stream.rs` | done (third case covers the TS `??` placeholder-fallback branch) |
 | `test/cloudflare-utils.ts` |  | exception (live-credential helper for the credentials-gated cloudflare suites, same treatment as `test/bedrock-utils.ts`; no offline behavior to port) |
-| `test/codex-websocket-cached-probe.ts` |  | exception (manual benchmark probe script, not a vitest suite; the websocket transport it measures is outside the SSE-only Rust port) |
+| `test/codex-websocket-cached-probe.ts` |  | exception (manual benchmark probe script, not a vitest suite; the websocket transport it measures is ported — see the adapter row — but the probe itself is a live benchmark with no offline assertions to port) |
 | `test/compat-env.test.ts` | `tests/ai_compat.rs` | done |
 | `test/constrained-sampling.test.ts` | `tests/ai_constrained_sampling.rs` | done |
 | `test/context-estimate.test.ts` | `tests/ai_context_estimate.rs` | done |
@@ -325,7 +325,7 @@ upstream package).
 | `test/oauth.ts` |  | exception (live-credential test helper reading `~/.pi/agent/auth.json`; the runtime equivalent is `src/ai/auth/resolve.rs` and has no offline behavior to port) |
 | `test/openai-codex-cache-affinity-e2e.test.ts` |  | live (gated on the openai-codex OAuth token) |
 | `test/openai-codex-oauth.test.ts` | `tests/ai_oauth_openai_codex.rs` | done |
-| `test/openai-codex-stream.test.ts` | `tests/ai_codex_stream.rs` | partial (the SSE surface is ported; the 11 websocket cases and the zstd-compression case are listed as unported in the test file header — they land with the WebSocket transport and request compression) |
+| `test/openai-codex-stream.test.ts` | `tests/ai_codex_stream.rs` | done (SSE, websocket, and zstd cases; the websocket tests inject mock sockets through the WebSocket factory and serialize on a shared lock, real 50ms windows replace `vi.useFakeTimers`, and the age-limit case overrides the cache clock in place of `vi.setSystemTime`) |
 | `test/openai-completions-cache-control-format.test.ts` | `tests/ai_openai_completions.rs` | done |
 | `test/openai-completions-empty-tools.test.ts` | `tests/ai_openai_completions.rs` | done |
 | `test/openai-completions-prompt-cache.test.ts` | `tests/ai_openai_completions.rs` | done |
@@ -408,10 +408,6 @@ Kept language/runtime differences:
 
 Tracked implementable gaps (must close before the migration is complete):
 
-- Codex WebSocket transport (`responses_websockets=2026-02-06`) with the
-  session cache (account-scoped, TTL/age limits, continuation reuse) and
-  SSE fallback, plus zstd request-body compression on the SSE path —
-  `src/api/openai-codex-responses.ts` row.
 - Bedrock web-identity (IRSA) and ECS container credential fetching, i.e.
   the parts of the AWS SDK default chain the TS adapter delegates to —
   `src/api/bedrock-converse-stream.ts` row.

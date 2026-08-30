@@ -378,6 +378,18 @@ pub enum Transport {
     Auto,
 }
 
+impl Transport {
+    /// The kebab-case transport name (the TypeScript literal values).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Transport::Sse => "sse",
+            Transport::Websocket => "websocket",
+            Transport::WebsocketCached => "websocket-cached",
+            Transport::Auto => "auto",
+        }
+    }
+}
+
 /// Port of `ProviderEnv`.
 pub type ProviderEnv = BTreeMap<String, String>;
 

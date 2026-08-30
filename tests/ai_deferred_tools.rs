@@ -21,8 +21,8 @@ use pi_core::ai::types::{
     DeferredToolsMode, ImageContent, MaxTokensField, Message, Model, ModelCompat,
     OpenRouterRouting, ProviderRequestOptions, RoleAssistant, RoleToolResult, RoleUser,
     SessionAffinityFormat, SimpleStreamOptions, StopReason, StreamOptions, TextContent,
-    ThinkingFormat, Tool, ToolCall, ToolResultMessage, Usage, UsageCost, UserContent, UserMessage,
-    VercelGatewayRouting,
+    ThinkingFormat, Tool, ToolCall, ToolResultMessage, Transport, Usage, UsageCost, UserContent,
+    UserMessage, VercelGatewayRouting,
 };
 use pi_core::ai::utils::estimate::estimate_context_tokens;
 use pi_core::ai::utils::http::{HttpBody, HttpFetch, HttpFetchError, HttpRequest, HttpResponse};
@@ -216,7 +216,14 @@ impl CaptureFetch {
     fn payload(&self) -> Value {
         match &self.request().body {
             HttpBody::Json(value) => value.clone(),
-            _ => panic!("expected JSON body"),
+            // The Codex SSE path compresses its request body (the Node
+            // oracle behavior).
+            HttpBody::Bytes(bytes) => {
+                let decompressed = zstd::bulk::decompress(bytes, 16 * 1024 * 1024)
+                    .expect("zstd-compressed request body");
+                serde_json::from_slice(&decompressed).expect("valid JSON in compressed body")
+            }
+            other => panic!("expected JSON body, got {other:?}"),
         }
     }
 }
@@ -255,6 +262,10 @@ async fn capture_payload(model: &Model, context: &Context, api_key: &str) -> Val
                 fetch: Some(fetch.clone()),
                 ..Default::default()
             },
+            // The TS helper forces baseUrl to a black-hole address so the
+            // codex WebSocket attempt fails immediately; the Rust helper
+            // pins the SSE transport instead.
+            transport: Some(Transport::Sse),
             ..Default::default()
         },
         ..Default::default()

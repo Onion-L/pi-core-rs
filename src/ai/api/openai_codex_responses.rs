@@ -1,17 +1,22 @@
-//! Port of `pi-core/ai/src/api/openai-codex-responses.ts` (SSE transport).
+//! Port of `pi-core/ai/src/api/openai-codex-responses.ts`.
 //!
-//! The TypeScript adapter prefers a WebSocket transport with SSE fallback;
-//! the Rust port implements the SSE path (the transport-fallback protocol
-//! behavior is preserved: the SSE request shape, URL resolution, retry
-//! policy, and the Codex event mapping are ported 1:1). WebSocket transport
-//! selection is recorded as a documented limitation in MIGRATION.md.
+//! The adapter prefers the WebSocket transport (`auto`, `websocket`,
+//! `websocket-cached`) with SSE fallback; the WebSocket machinery lives in
+//! [`super::openai_codex_websocket`] and the SSE path (request shape, URL
+//! resolution, retry policy, zstd request-body compression, and the Codex
+//! event mapping) is ported here.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 use crate::ai::api::constrained_sampling::create_grammar_tool_input_properties;
+use crate::ai::api::openai_codex_websocket::{
+    AcquiredWebSocket, CodexWsFailure, WebSocketEvent, acquire_web_socket,
+    is_websocket_sse_fallback_active, record_websocket_failure, record_websocket_sse_fallback,
+};
 use crate::ai::api::openai_completions::clamp_openai_prompt_cache_key;
 use crate::ai::api::openai_responses_shared::{
     ConvertResponsesMessagesOptions, ResponsesStreamOptions, convert_responses_messages,
@@ -21,9 +26,12 @@ use crate::ai::api::simple_options::build_base_options;
 use crate::ai::models::clamp_thinking_level;
 use crate::ai::types::{
     CacheRetention, Context, Model, ProviderHeaders, SimpleStreamOptions, StreamOptions,
-    ThinkingLevel, Usage,
+    ThinkingLevel, Transport, Usage,
 };
 use crate::ai::utils::deferred_tools::split_deferred_tools;
+use crate::ai::utils::diagnostics::{
+    append_assistant_message_diagnostic, create_assistant_message_diagnostic,
+};
 use crate::ai::utils::error_body::{
     ProviderErrorParts, format_provider_error, normalize_provider_error,
 };
@@ -34,10 +42,22 @@ use crate::ai::utils::http::{HttpBody, HttpMethod, HttpRequest};
 use crate::ai::utils::provider_retry::retry_provider_request;
 use crate::ai::utils::reqwest_fetch::default_fetch;
 
+pub use crate::ai::api::openai_codex_websocket::{
+    OpenAICodexWebSocketDebugStats, close_openai_codex_websocket_sessions,
+    get_openai_codex_websocket_debug_stats, reset_openai_codex_websocket_debug_stats,
+    set_websocket_clock_for_tests, set_websocket_factory_for_tests,
+};
+
 const DEFAULT_CODEX_BASE_URL: &str = "https://chatgpt.com/backend-api";
 const DEFAULT_MAX_RETRIES: u32 = 0;
 const BASE_DELAY_MS: u64 = 1000;
 const DEFAULT_MAX_RETRY_DELAY_MS: u64 = 60_000;
+const DEFAULT_WEBSOCKET_CONNECT_TIMEOUT_MS: u64 = 15_000;
+const OPENAI_BETA_RESPONSES_WEBSOCKETS: &str = "responses_websockets=2026-02-06";
+/// The Codex backend accepts zstd-compressed request bodies on the SSE
+/// responses endpoint (the same endpoint the official Codex client
+/// compresses against).
+const REQUEST_COMPRESSION_ZSTD_LEVEL: i32 = 3;
 
 fn codex_tool_call_providers() -> BTreeSet<String> {
     ["openai", "openai-codex", "opencode"]
@@ -158,6 +178,102 @@ pub fn resolve_codex_url(base_url: Option<&str>) -> String {
     } else {
         format!("{normalized}/codex/responses")
     }
+}
+
+/// Port of `resolveCodexWebSocketUrl`: the responses URL with the scheme
+/// swapped to `ws`/`wss` (URL serialization keeps the normalized path).
+pub fn resolve_codex_websocket_url(base_url: Option<&str>) -> String {
+    let url = resolve_codex_url(base_url);
+    if let Some(rest) = url.strip_prefix("https://") {
+        format!("wss://{rest}")
+    } else if let Some(rest) = url.strip_prefix("http://") {
+        format!("ws://{rest}")
+    } else {
+        url
+    }
+}
+
+/// Headers-object semantics for the ordered header list: `set` replaces any
+/// same-name entry (case-insensitive), `delete` removes it.
+fn upsert_header(headers: &mut Vec<(String, String)>, name: &str, value: &str) {
+    if let Some(entry) = headers
+        .iter_mut()
+        .find(|(key, _)| key.eq_ignore_ascii_case(name))
+    {
+        entry.1 = value.to_string();
+    } else {
+        headers.push((name.to_string(), value.to_string()));
+    }
+}
+
+fn remove_header(headers: &mut Vec<(String, String)>, name: &str) {
+    headers.retain(|(key, _)| !key.eq_ignore_ascii_case(name));
+}
+
+/// Port of `buildBaseCodexHeaders`: model headers first, option headers
+/// set/delete over them, then the fixed Codex auth headers.
+fn build_base_codex_headers(
+    init_headers: Option<&BTreeMap<String, String>>,
+    additional_headers: Option<&ProviderHeaders>,
+    account_id: Option<&str>,
+    token: &str,
+) -> Vec<(String, String)> {
+    let mut headers: Vec<(String, String)> = Vec::new();
+    if let Some(init_headers) = init_headers {
+        for (name, value) in init_headers {
+            upsert_header(&mut headers, name, value);
+        }
+    }
+    if let Some(additional_headers) = additional_headers {
+        for (name, value) in additional_headers {
+            if let Some(value) = value {
+                upsert_header(&mut headers, name, value);
+            } else {
+                remove_header(&mut headers, name);
+            }
+        }
+    }
+    upsert_header(&mut headers, "Authorization", &format!("Bearer {token}"));
+    if let Some(account_id) = account_id {
+        upsert_header(&mut headers, "chatgpt-account-id", account_id);
+    }
+    upsert_header(&mut headers, "originator", "pi");
+    upsert_header(
+        &mut headers,
+        "User-Agent",
+        &crate::ai::session_resources::get_pi_user_agent(),
+    );
+    headers
+}
+
+/// Port of `buildWebSocketHeaders`.
+fn build_websocket_headers(
+    init_headers: Option<&BTreeMap<String, String>>,
+    additional_headers: Option<&ProviderHeaders>,
+    account_id: Option<&str>,
+    token: &str,
+    request_id: &str,
+) -> Vec<(String, String)> {
+    let mut headers = build_base_codex_headers(init_headers, additional_headers, account_id, token);
+    remove_header(&mut headers, "accept");
+    remove_header(&mut headers, "content-type");
+    remove_header(&mut headers, "OpenAI-Beta");
+    remove_header(&mut headers, "openai-beta");
+    upsert_header(
+        &mut headers,
+        "OpenAI-Beta",
+        OPENAI_BETA_RESPONSES_WEBSOCKETS,
+    );
+    upsert_header(&mut headers, "x-client-request-id", request_id);
+    upsert_header(&mut headers, "session-id", request_id);
+    headers
+}
+
+/// Port of `compressRequestBodyZstd`: the zstd-compressed body bytes. The
+/// Rust runtime always links zstd (the Node oracle path), so compression
+/// never falls back to the uncompressed JSON.
+fn compress_request_body_zstd(body_json: &str) -> Option<Vec<u8>> {
+    zstd::bulk::compress(body_json.as_bytes(), REQUEST_COMPRESSION_ZSTD_LEVEL).ok()
 }
 
 /// Port of `isTerminalRateLimitError`.
@@ -585,6 +701,319 @@ fn codex_sse_event_stream(
     )
 }
 
+/// Port of the `parseWebSocket` + `mapCodexEvents` pipeline over a
+/// [`WebSocketLike`](super::openai_codex_websocket::WebSocketLike) socket:
+/// buffered socket events parsed as JSON frames and mapped exactly like the
+/// SSE path, with transport/protocol/API failures recorded into `failure`
+/// for the retry/fallback decision (TypeScript reads them off the thrown
+/// error's class and `code`).
+fn codex_websocket_event_stream(
+    socket: Arc<dyn crate::ai::api::openai_codex_websocket::WebSocketLike>,
+    signal: Option<tokio_util::sync::CancellationToken>,
+    idle_timeout_ms: Option<u64>,
+    end_turn: Arc<std::sync::Mutex<Option<bool>>>,
+    failure: Arc<std::sync::Mutex<Option<CodexWsFailure>>>,
+) -> impl futures::Stream<Item = Result<Value, String>> {
+    type WsState = (
+        Arc<dyn crate::ai::api::openai_codex_websocket::WebSocketLike>,
+        Option<tokio_util::sync::CancellationToken>,
+        Option<u64>,
+        Arc<std::sync::Mutex<Option<bool>>>,
+        Arc<std::sync::Mutex<Option<CodexWsFailure>>>,
+        bool,
+    );
+    let record_failure = |failure: &Arc<std::sync::Mutex<Option<CodexWsFailure>>>,
+                          error: CodexWsFailure|
+     -> String {
+        let mut slot = failure
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let message = error.to_string();
+        if slot.is_none() {
+            *slot = Some(error);
+        }
+        message
+    };
+    futures::stream::unfold(
+        (
+            socket,
+            signal,
+            idle_timeout_ms,
+            end_turn,
+            failure,
+            false, // saw_completion
+        ) as WsState,
+        move |(socket, signal, idle_timeout_ms, end_turn, failure, saw_completion)| {
+            async move {
+                loop {
+                    // `mapCodexEvents` returns after the terminal response
+                    // event; the mapped stream ends with it.
+                    if saw_completion {
+                        return None;
+                    }
+                    if let Some(token) = signal.as_ref()
+                        && token.is_cancelled()
+                    {
+                        let message = record_failure(
+                            &failure,
+                            CodexWsFailure::transport("Request was aborted"),
+                        );
+                        return Some((
+                            Err(message),
+                            (
+                                socket,
+                                signal,
+                                idle_timeout_ms,
+                                end_turn,
+                                failure,
+                                saw_completion,
+                            ),
+                        ));
+                    }
+                    let next = socket.next_event();
+                    let event = tokio::select! {
+                        event = next => event,
+                        () = async {
+                            match idle_timeout_ms.filter(|timeout| *timeout > 0) {
+                                Some(timeout) => tokio::time::sleep(std::time::Duration::from_millis(timeout)).await,
+                                None => std::future::pending::<()>().await,
+                            }
+                        } => {
+                            socket.close_silently(1000, "idle_timeout");
+                            let timeout = idle_timeout_ms.unwrap_or_default();
+                            let message = record_failure(
+                                &failure,
+                                CodexWsFailure::transport(format!(
+                                    "WebSocket idle timeout after {timeout}ms"
+                                )),
+                            );
+                            return Some((Err(message), (socket, signal, idle_timeout_ms, end_turn, failure, saw_completion)));
+                        }
+                        () = async {
+                            match &signal {
+                                Some(token) => token.cancelled().await,
+                                None => std::future::pending::<()>().await,
+                            }
+                        } => {
+                            let message = record_failure(
+                                &failure,
+                                CodexWsFailure::transport("Request was aborted"),
+                            );
+                            return Some((Err(message), (socket, signal, idle_timeout_ms, end_turn, failure, saw_completion)));
+                        }
+                    };
+                    match event {
+                        Some(WebSocketEvent::Message(text)) => {
+                            let parsed: Result<Value, _> = serde_json::from_str(&text);
+                            let event = match parsed {
+                                Ok(event) => event,
+                                Err(cause) => {
+                                    let message = record_failure(
+                                        &failure,
+                                        CodexWsFailure::protocol(format!(
+                                            "Invalid Codex WebSocket JSON: {cause}"
+                                        )),
+                                    );
+                                    return Some((
+                                        Err(message),
+                                        (
+                                            socket,
+                                            signal,
+                                            idle_timeout_ms,
+                                            end_turn,
+                                            failure,
+                                            saw_completion,
+                                        ),
+                                    ));
+                                }
+                            };
+                            let Some(event_type) = event
+                                .get("type")
+                                .and_then(Value::as_str)
+                                .map(str::to_string)
+                            else {
+                                continue;
+                            };
+                            if event_type == "error" {
+                                // Port of `extractCodexEventError`.
+                                let nested = event.get("error").filter(|value| value.is_object());
+                                let code = event
+                                    .get("code")
+                                    .and_then(Value::as_str)
+                                    .or_else(|| {
+                                        nested
+                                            .and_then(|nested| nested.get("code"))
+                                            .and_then(Value::as_str)
+                                    })
+                                    .map(str::to_string);
+                                let message = event
+                                    .get("message")
+                                    .and_then(Value::as_str)
+                                    .or_else(|| {
+                                        nested
+                                            .and_then(|nested| nested.get("message"))
+                                            .and_then(Value::as_str)
+                                    })
+                                    .map(str::to_string);
+                                let detail =
+                                    message.clone().or_else(|| code.clone()).unwrap_or_else(|| {
+                                        serde_json::to_string(&event).unwrap_or_default()
+                                    });
+                                let message = record_failure(
+                                    &failure,
+                                    CodexWsFailure::api(format!("Codex error: {detail}"), code),
+                                );
+                                return Some((
+                                    Err(message),
+                                    (
+                                        socket,
+                                        signal,
+                                        idle_timeout_ms,
+                                        end_turn,
+                                        failure,
+                                        saw_completion,
+                                    ),
+                                ));
+                            }
+                            if event_type == "response.failed" {
+                                let code = event
+                                    .pointer("/response/error/code")
+                                    .and_then(Value::as_str)
+                                    .map(str::to_string);
+                                let message = event
+                                    .pointer("/response/error/message")
+                                    .and_then(Value::as_str)
+                                    .map(str::to_string)
+                                    .unwrap_or_else(|| "Codex response failed".to_string());
+                                let message =
+                                    record_failure(&failure, CodexWsFailure::api(message, code));
+                                return Some((
+                                    Err(message),
+                                    (
+                                        socket,
+                                        signal,
+                                        idle_timeout_ms,
+                                        end_turn,
+                                        failure,
+                                        saw_completion,
+                                    ),
+                                ));
+                            }
+                            if matches!(
+                                event_type.as_str(),
+                                "response.done" | "response.completed" | "response.incomplete"
+                            ) {
+                                let mut event = event;
+                                if let Some(response) =
+                                    event.get_mut("response").and_then(Value::as_object_mut)
+                                {
+                                    if let Some(end_turn_value) = response.get("end_turn")
+                                        && end_turn_value.is_boolean()
+                                    {
+                                        *end_turn.lock().unwrap() = end_turn_value.as_bool();
+                                    }
+                                    if let Some(status) = response.get("status")
+                                        && !matches!(
+                                            status.as_str(),
+                                            Some("completed")
+                                                | Some("incomplete")
+                                                | Some("failed")
+                                                | Some("cancelled")
+                                                | Some("queued")
+                                                | Some("in_progress")
+                                        )
+                                    {
+                                        response.remove("status");
+                                    }
+                                }
+                                event["type"] = json!("response.completed");
+                                return Some((
+                                    Ok(event),
+                                    (socket, signal, idle_timeout_ms, end_turn, failure, true),
+                                ));
+                            }
+                            return Some((
+                                Ok(event),
+                                (
+                                    socket,
+                                    signal,
+                                    idle_timeout_ms,
+                                    end_turn,
+                                    failure,
+                                    saw_completion,
+                                ),
+                            ));
+                        }
+                        Some(WebSocketEvent::Error(message)) => {
+                            let error_message =
+                                record_failure(&failure, CodexWsFailure::transport(message));
+                            return Some((
+                                Err(error_message),
+                                (
+                                    socket,
+                                    signal,
+                                    idle_timeout_ms,
+                                    end_turn,
+                                    failure,
+                                    saw_completion,
+                                ),
+                            ));
+                        }
+                        Some(WebSocketEvent::Close { code, reason }) => {
+                            if saw_completion {
+                                return None;
+                            }
+                            let error_message = record_failure(
+                                &failure,
+                                CodexWsFailure::transport(
+                                    crate::ai::api::openai_codex_websocket::close_error_message(
+                                        code,
+                                        reason.as_deref(),
+                                    ),
+                                ),
+                            );
+                            return Some((
+                                Err(error_message),
+                                (
+                                    socket,
+                                    signal,
+                                    idle_timeout_ms,
+                                    end_turn,
+                                    failure,
+                                    saw_completion,
+                                ),
+                            ));
+                        }
+                        Some(WebSocketEvent::Open) => continue,
+                        None => {
+                            if saw_completion {
+                                return None;
+                            }
+                            let error_message = record_failure(
+                                &failure,
+                                CodexWsFailure::transport(
+                                    "WebSocket stream closed before response.completed",
+                                ),
+                            );
+                            return Some((
+                                Err(error_message),
+                                (
+                                    socket,
+                                    signal,
+                                    idle_timeout_ms,
+                                    end_turn,
+                                    failure,
+                                    saw_completion,
+                                ),
+                            ));
+                        }
+                    }
+                }
+            }
+        },
+    )
+}
+
 /// Port of the `stream` stream function (SSE transport).
 #[allow(clippy::too_many_lines)]
 pub fn stream(
@@ -644,6 +1073,248 @@ pub fn stream(
     stream
 }
 
+/// Port of `processWebSocketStream`: acquire (or reuse) the session socket,
+/// send the `response.create` frame (delta-only when a cached continuation
+/// matches), and feed the mapped events through the shared Responses
+/// processor, starting the message stream on the first event.
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+async fn process_web_socket_stream(
+    model: &Model,
+    body: Value,
+    headers: Vec<(String, String)>,
+    output: &mut crate::ai::types::AssistantMessage,
+    producer: &AssistantMessageEventStream,
+    on_start: &Arc<dyn Fn() + Send + Sync>,
+    idle_timeout_ms: Option<u64>,
+    websocket_connect_timeout_ms: Option<u64>,
+    cache_session_id: Option<&str>,
+    account_id: &str,
+    grammar_tool_input_properties: &BTreeMap<String, String>,
+    options: Option<&OpenAICodexResponsesOptions>,
+    transport: Transport,
+) -> Result<(), CodexWsFailure> {
+    let signal = options.and_then(|options| options.base.base.signal.clone());
+    let url = resolve_codex_websocket_url(Some(&model.base_url));
+    let acquired: AcquiredWebSocket = acquire_web_socket(
+        &url,
+        headers,
+        cache_session_id,
+        account_id,
+        signal.clone(),
+        websocket_connect_timeout_ms,
+    )
+    .await?;
+    let mut keep_connection = true;
+    let use_cached_context = matches!(transport, Transport::WebsocketCached | Transport::Auto);
+    let request_body = if use_cached_context {
+        acquired.cached_request_body(&body)
+    } else {
+        body.clone()
+    };
+
+    if let Some(session_id) = cache_session_id {
+        let mut stats =
+            crate::ai::api::openai_codex_websocket::get_or_create_websocket_debug_stats(session_id);
+        stats.requests += 1;
+        if acquired.reused {
+            stats.connections_reused += 1;
+        } else {
+            stats.connections_created += 1;
+        }
+        if use_cached_context {
+            stats.cached_context_requests += 1;
+        }
+        if request_body.get("store") == Some(&json!(true)) {
+            stats.store_true_requests += 1;
+        }
+        let input_items = request_body
+            .get("input")
+            .and_then(Value::as_array)
+            .map_or(0, Vec::len) as u64;
+        stats.last_input_items = input_items;
+        let previous_response_id = request_body
+            .get("previous_response_id")
+            .and_then(Value::as_str)
+            .filter(|id| !id.is_empty())
+            .map(str::to_string);
+        if let Some(previous_response_id) = previous_response_id {
+            stats.delta_requests += 1;
+            stats.last_delta_input_items = Some(input_items);
+            stats.last_previous_response_id = Some(previous_response_id);
+        } else {
+            stats.full_context_requests += 1;
+            stats.last_delta_input_items = None;
+            stats.last_previous_response_id = None;
+        }
+        crate::ai::api::openai_codex_websocket::write_websocket_debug_stats(session_id, stats);
+    }
+
+    let result = run_web_socket_request(
+        model,
+        acquired_socket(&acquired),
+        request_body,
+        body.clone(),
+        output,
+        producer,
+        on_start,
+        idle_timeout_ms,
+        signal,
+        use_cached_context,
+        grammar_tool_input_properties,
+        options,
+    )
+    .await;
+    match result {
+        Ok(continuation) => {
+            if let Some((full_body, response_id, response_items)) = continuation {
+                acquired.save_continuation(full_body, response_id, response_items);
+            }
+            acquired.release(keep_connection);
+            Ok(())
+        }
+        Err(failure) => {
+            acquired.clear_continuation();
+            keep_connection = false;
+            acquired.release(keep_connection);
+            Err(failure)
+        }
+    }
+}
+
+fn acquired_socket(
+    acquired: &AcquiredWebSocket,
+) -> Arc<dyn crate::ai::api::openai_codex_websocket::WebSocketLike> {
+    Arc::clone(&acquired.socket)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_web_socket_request(
+    model: &Model,
+    socket: Arc<dyn crate::ai::api::openai_codex_websocket::WebSocketLike>,
+    request_body: Value,
+    full_body: Value,
+    output: &mut crate::ai::types::AssistantMessage,
+    producer: &AssistantMessageEventStream,
+    on_start: &Arc<dyn Fn() + Send + Sync>,
+    idle_timeout_ms: Option<u64>,
+    signal: Option<tokio_util::sync::CancellationToken>,
+    use_cached_context: bool,
+    grammar_tool_input_properties: &BTreeMap<String, String>,
+    options: Option<&OpenAICodexResponsesOptions>,
+) -> Result<Option<(Value, String, Value)>, CodexWsFailure> {
+    // The `response.create` frame spreads the body after `type`.
+    let mut frame = Map::new();
+    frame.insert("type".to_string(), json!("response.create"));
+    if let Some(object) = request_body.as_object() {
+        for (key, value) in object {
+            frame.insert(key.clone(), value.clone());
+        }
+    }
+    socket.send_text(&Value::Object(frame).to_string());
+
+    let model_owned = model.clone();
+    let stream_options = ResponsesStreamOptions {
+        service_tier: options.and_then(|options| options.service_tier.clone()),
+        grammar_tool_input_properties: Some(grammar_tool_input_properties.clone()),
+        resolve_service_tier: Some(Box::new(
+            |response_tier: Option<&str>, request_tier: Option<&str>| {
+                resolve_codex_service_tier(response_tier, request_tier)
+            },
+        )),
+        apply_service_tier_pricing: Some(Box::new(
+            move |usage: &mut Usage, service_tier: Option<&str>| {
+                apply_service_tier_pricing(usage, service_tier, &model_owned);
+            },
+        )),
+    };
+    let end_turn: Arc<std::sync::Mutex<Option<bool>>> = Arc::new(std::sync::Mutex::new(None));
+    let failure: Arc<std::sync::Mutex<Option<CodexWsFailure>>> =
+        Arc::new(std::sync::Mutex::new(None));
+    let mapped = codex_websocket_event_stream(
+        socket,
+        signal.clone(),
+        idle_timeout_ms,
+        Arc::clone(&end_turn),
+        Arc::clone(&failure),
+    );
+    // Port of `startWebSocketOutputOnFirstEvent`.
+    let on_start = Arc::clone(on_start);
+    let mapped = std::pin::pin!(mapped);
+    let mapped_with_start = futures::stream::unfold(
+        (mapped, on_start, false),
+        |(mut mapped, on_start, started)| async move {
+            match futures::StreamExt::next(&mut mapped).await {
+                Some(item) => {
+                    // The TypeScript generator throws (never yields) on
+                    // error frames, so only mapped events start the stream.
+                    let started = if started || item.is_err() {
+                        true
+                    } else {
+                        on_start();
+                        true
+                    };
+                    Some((item, (mapped, on_start, started)))
+                }
+                None => None,
+            }
+        },
+    );
+    let processed = process_responses_stream(
+        mapped_with_start,
+        output,
+        producer,
+        model,
+        Some(&stream_options),
+    )
+    .await;
+    if let Some(end_turn) = end_turn.lock().unwrap().take() {
+        output.end_turn = Some(end_turn);
+    }
+    processed.map_err(|message| {
+        let mut slot = failure
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        slot.take()
+            .unwrap_or_else(|| CodexWsFailure::transport(message))
+    })?;
+
+    let aborted = signal.as_ref().is_some_and(|token| token.is_cancelled());
+    if aborted {
+        return Ok(None);
+    }
+    if use_cached_context && let Some(response_id) = output.response_id.clone() {
+        let response_items = convert_responses_messages(
+            model,
+            &Context {
+                messages: vec![crate::ai::types::Message::Assistant(Box::new(
+                    output.clone(),
+                ))],
+                ..Default::default()
+            },
+            &codex_tool_call_providers(),
+            Some(&ConvertResponsesMessagesOptions {
+                include_system_prompt: Some(false),
+                grammar_tool_input_properties: Some(grammar_tool_input_properties),
+                deferred_tools: None,
+                deferred_tools_mode: None,
+                tool_options: None,
+            }),
+        )
+        .map_err(CodexWsFailure::protocol)?;
+        let filtered: Vec<Value> = response_items
+            .into_iter()
+            .filter(|item| {
+                !matches!(
+                    item.get("type").and_then(Value::as_str),
+                    Some("function_call_output") | Some("custom_tool_call_output")
+                )
+            })
+            .collect();
+        return Ok(Some((full_body, response_id, Value::Array(filtered))));
+    }
+    Ok(None)
+}
+
 async fn run_stream(
     model: &Model,
     context: &Context,
@@ -686,41 +1357,192 @@ async fn run_stream(
         body = next_body;
     }
 
-    // Port of `buildSSEHeaders`: base Codex headers plus the SSE-only
-    // OpenAI-Beta value and session affinity headers.
-    let mut headers: Vec<(String, String)> = vec![
-        ("accept".to_string(), "text/event-stream".to_string()),
-        ("content-type".to_string(), "application/json".to_string()),
-        ("authorization".to_string(), format!("Bearer {api_key}")),
-    ];
-    if let Some(account_id) = &account_id {
-        headers.push(("chatgpt-account-id".to_string(), account_id.clone()));
+    // Port of the header assembly shared by both transports.
+    let model_headers = model.headers.as_ref();
+    let options_headers = options.and_then(|options| options.base.base.headers.as_ref());
+    let websocket_request_id = codex_session_id
+        .clone()
+        .unwrap_or_else(crate::ai::utils::uuid::uuidv7);
+    let websocket_headers = build_websocket_headers(
+        model_headers,
+        options_headers,
+        account_id.as_deref(),
+        &api_key,
+        websocket_request_id.as_str(),
+    );
+    let body_json = serde_json::to_string(&body).unwrap_or_default();
+    let http_timeout_ms = options.and_then(|options| options.base.base.timeout_ms);
+    let websocket_connect_timeout_ms = options
+        .and_then(|options| options.base.websocket_connect_timeout_ms)
+        .unwrap_or(DEFAULT_WEBSOCKET_CONNECT_TIMEOUT_MS);
+    let transport = options
+        .and_then(|options| options.base.transport)
+        .unwrap_or(Transport::Auto);
+    let signal = options.and_then(|options| options.base.base.signal.clone());
+    // Shared across WebSocket attempts and the SSE fallback: the start
+    // event fires once per stream (the TypeScript `startEmitted` flag).
+    let start_emitted = Arc::new(AtomicBool::new(false));
+
+    let websocket_disabled_for_session = transport != Transport::Sse
+        && is_websocket_sse_fallback_active(cache_session_id.as_deref());
+    if websocket_disabled_for_session {
+        record_websocket_sse_fallback(cache_session_id.as_deref());
     }
-    headers.push(("originator".to_string(), "pi".to_string()));
-    headers.push((
-        "User-Agent".to_string(),
-        crate::ai::session_resources::get_pi_user_agent(),
-    ));
-    headers.push((
-        "OpenAI-Beta".to_string(),
-        "responses=experimental".to_string(),
-    ));
-    if let Some(session_id) = &codex_session_id {
-        headers.push(("session-id".to_string(), session_id.clone()));
-        headers.push(("x-client-request-id".to_string(), session_id.clone()));
-    }
-    if let Some(model_headers) = &model.headers {
-        for (name, value) in model_headers {
-            headers.push((name.clone(), value.clone()));
-        }
-    }
-    if let Some(options_headers) = options.and_then(|options| options.base.base.headers.as_ref()) {
-        for (name, value) in options_headers {
-            if let Some(value) = value {
-                headers.push((name.clone(), value.clone()));
+
+    let mut websocket_succeeded = false;
+    if transport != Transport::Sse && !websocket_disabled_for_session {
+        let websocket_started = Arc::new(AtomicBool::new(false));
+        let mut retried_websocket_connection_limit = false;
+        let mut retried_missing_websocket_continuation = false;
+        loop {
+            websocket_started.store(false, Ordering::SeqCst);
+            let on_start: Arc<dyn Fn() + Send + Sync> = {
+                let websocket_started = Arc::clone(&websocket_started);
+                let start_emitted = Arc::clone(&start_emitted);
+                let producer = producer.clone();
+                let partial = output.clone();
+                Arc::new(move || {
+                    websocket_started.store(true, Ordering::SeqCst);
+                    if !start_emitted.swap(true, Ordering::SeqCst) {
+                        producer.push(crate::ai::types::AssistantMessageEvent::Start {
+                            partial: partial.clone(),
+                        });
+                    }
+                })
+            };
+            let attempt = process_web_socket_stream(
+                model,
+                body.clone(),
+                websocket_headers.clone(),
+                output,
+                producer,
+                &on_start,
+                http_timeout_ms,
+                Some(websocket_connect_timeout_ms),
+                cache_session_id.as_deref(),
+                account_id.as_deref().unwrap_or_default(),
+                &grammar_tool_input_properties,
+                options,
+                transport,
+            )
+            .await;
+            match attempt {
+                Ok(()) => {
+                    websocket_succeeded = true;
+                    break;
+                }
+                Err(failure) => {
+                    let aborted = signal.as_ref().is_some_and(|token| token.is_cancelled());
+                    let started = websocket_started.load(Ordering::SeqCst);
+                    let connection_limit_before_start =
+                        !started && failure.is_connection_limit_reached();
+                    let previous_response_not_found = failure.is_previous_response_not_found();
+                    if !aborted
+                        && previous_response_not_found
+                        && !retried_missing_websocket_continuation
+                    {
+                        retried_missing_websocket_continuation = true;
+                        continue;
+                    }
+                    if !aborted
+                        && connection_limit_before_start
+                        && !retried_websocket_connection_limit
+                    {
+                        retried_websocket_connection_limit = true;
+                        continue;
+                    }
+                    if aborted || (failure.is_non_transport() && !connection_limit_before_start) {
+                        return Err(failure.message);
+                    }
+                    let mut details = Map::new();
+                    details.insert("configuredTransport".to_string(), json!(transport.as_str()));
+                    if !started {
+                        details.insert("fallbackTransport".to_string(), json!("sse"));
+                    }
+                    details.insert("eventsEmitted".to_string(), json!(started));
+                    details.insert(
+                        "phase".to_string(),
+                        json!(if started {
+                            "after_message_stream_start"
+                        } else {
+                            "before_message_stream_start"
+                        }),
+                    );
+                    details.insert("requestBytes".to_string(), json!(body_json.len()));
+                    append_assistant_message_diagnostic(
+                        output,
+                        create_assistant_message_diagnostic(
+                            "provider_transport_failure",
+                            &failure,
+                            Some(Value::Object(details)),
+                        ),
+                    );
+                    record_websocket_failure(cache_session_id.as_deref(), &failure);
+                    if started {
+                        return Err(failure.message);
+                    }
+                    record_websocket_sse_fallback(cache_session_id.as_deref());
+                    break;
+                }
             }
         }
+        if websocket_succeeded {
+            let signal = options.and_then(|options| options.base.base.signal.clone());
+            if signal.as_ref().is_some_and(|token| token.is_cancelled()) {
+                return Err("Request was aborted".to_string());
+            }
+            if output.stop_reason == crate::ai::types::StopReason::Pending {
+                return Err("Codex stream ended without a stop reason".to_string());
+            }
+            if output.stop_reason == crate::ai::types::StopReason::Error
+                || output.stop_reason == crate::ai::types::StopReason::Aborted
+            {
+                return Err(output
+                    .error_message
+                    .clone()
+                    .unwrap_or_else(|| "An unknown error occurred".to_string()));
+            }
+            let reason = match output.stop_reason {
+                crate::ai::types::StopReason::Length => crate::ai::types::DoneReason::Length,
+                crate::ai::types::StopReason::ToolUse => crate::ai::types::DoneReason::ToolUse,
+                crate::ai::types::StopReason::Deferred => crate::ai::types::DoneReason::Deferred,
+                _ => crate::ai::types::DoneReason::Stop,
+            };
+            producer.push(crate::ai::types::AssistantMessageEvent::Done {
+                reason,
+                message: output.clone(),
+            });
+            producer.end(None);
+            return Ok(());
+        }
     }
+
+    // Port of `buildSSEHeaders`: base Codex headers plus the SSE-only
+    // OpenAI-Beta value and session affinity headers.
+    let mut headers = build_base_codex_headers(
+        model_headers,
+        options_headers,
+        account_id.as_deref(),
+        &api_key,
+    );
+    upsert_header(&mut headers, "OpenAI-Beta", "responses=experimental");
+    upsert_header(&mut headers, "accept", "text/event-stream");
+    upsert_header(&mut headers, "content-type", "application/json");
+    if let Some(session_id) = &codex_session_id {
+        upsert_header(&mut headers, "session-id", session_id);
+        upsert_header(&mut headers, "x-client-request-id", session_id);
+    }
+
+    // Compress the request body once for the SSE path. The Codex backend
+    // decodes Content-Encoding: zstd; the WebSocket transport above sends the
+    // uncompressed JSON frame, matching the official Codex client.
+    let compressed_body = compress_request_body_zstd(&body_json);
+    if compressed_body.is_some() {
+        upsert_header(&mut headers, "content-encoding", "zstd");
+    }
+    let sse_body = compressed_body
+        .map(|bytes| HttpBody::Bytes(bytes::Bytes::from(bytes)))
+        .unwrap_or_else(|| HttpBody::Text(body_json.clone()));
 
     let fetch = options
         .and_then(|options| options.base.base.fetch.clone())
@@ -730,7 +1552,7 @@ async fn run_stream(
         method: HttpMethod::Post,
         url,
         headers,
-        body: HttpBody::Json(body),
+        body: sse_body,
     };
 
     // Port of the SSE retry loop: bounded attempts, retryable statuses, and
@@ -868,9 +1690,11 @@ async fn run_stream(
     }
 
     let response = response.ok_or_else(|| "Failed after retries".to_string())?;
-    producer.push(crate::ai::types::AssistantMessageEvent::Start {
-        partial: output.clone(),
-    });
+    if !start_emitted.swap(true, Ordering::SeqCst) {
+        producer.push(crate::ai::types::AssistantMessageEvent::Start {
+            partial: output.clone(),
+        });
+    }
 
     let model_owned = model.clone();
     let stream_options = ResponsesStreamOptions {
