@@ -128,6 +128,38 @@ fn message_stop() -> (String, String) {
     )
 }
 
+/// The shared `minimalAnthropicEvents` fixture: a text block assembled from
+/// an empty start event plus one "Hello" delta.
+fn minimal_anthropic_events() -> Vec<(String, String)> {
+    vec![
+        message_start("msg_test", 12),
+        (
+            "content_block_start".to_string(),
+            serde_json::json!({
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": { "type": "text", "text": "" },
+            })
+            .to_string(),
+        ),
+        (
+            "content_block_delta".to_string(),
+            serde_json::json!({
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": { "type": "text_delta", "text": "Hello" },
+            })
+            .to_string(),
+        ),
+        (
+            "content_block_stop".to_string(),
+            "{\"type\":\"content_block_stop\",\"index\":0}".to_string(),
+        ),
+        message_delta("end_turn", 5),
+        message_stop(),
+    ]
+}
+
 #[tokio::test]
 async fn parses_minimal_stream_and_repairs_malformed_tool_json() {
     // The malformed delta embeds an invalid escape (`A\H`) and a raw tab; the
@@ -224,6 +256,41 @@ async fn preserves_content_from_content_block_start_events() {
             "content_block_stop".to_string(),
             "{\"type\":\"content_block_stop\",\"index\":0}".to_string(),
         ),
+        (
+            "content_block_start".to_string(),
+            serde_json::json!({
+                "type": "content_block_start",
+                "index": 1,
+                "content_block": {
+                    "type": "thinking",
+                    "thinking": "Initial thinking",
+                    "signature": "initial signature",
+                },
+            })
+            .to_string(),
+        ),
+        (
+            "content_block_delta".to_string(),
+            serde_json::json!({
+                "type": "content_block_delta",
+                "index": 1,
+                "delta": { "type": "thinking_delta", "thinking": " plus delta" },
+            })
+            .to_string(),
+        ),
+        (
+            "content_block_delta".to_string(),
+            serde_json::json!({
+                "type": "content_block_delta",
+                "index": 1,
+                "delta": { "type": "signature_delta", "signature": " plus delta" },
+            })
+            .to_string(),
+        ),
+        (
+            "content_block_stop".to_string(),
+            "{\"type\":\"content_block_stop\",\"index\":1}".to_string(),
+        ),
         message_delta("end_turn", 5),
         message_stop(),
     ];
@@ -240,14 +307,205 @@ async fn preserves_content_from_content_block_start_events() {
     assert_eq!(result.stop_reason, StopReason::Stop);
     assert_eq!(
         result.content,
-        vec![AssistantContent::Text(pi_core::ai::types::TextContent {
-            text: "Initial text plus delta".to_string(),
-            ..Default::default()
-        })]
+        vec![
+            AssistantContent::Text(pi_core::ai::types::TextContent {
+                text: "Initial text plus delta".to_string(),
+                ..Default::default()
+            }),
+            AssistantContent::Thinking(pi_core::ai::types::ThinkingContent {
+                thinking: "Initial thinking plus delta".to_string(),
+                thinking_signature: Some("initial signature plus delta".to_string()),
+                ..Default::default()
+            }),
+        ]
     );
     assert_eq!(result.response_id.as_deref(), Some("msg_initial_content"));
     assert_eq!(result.usage.input, 12);
     assert_eq!(result.usage.output, 5);
+}
+
+#[tokio::test]
+async fn preserves_refusal_stop_details_from_message_delta() {
+    let model = pi_core::ai::providers::builtin::get_builtin_model("anthropic", "claude-fable-5")
+        .expect("claude-fable-5 model");
+    let context = Context {
+        messages: vec![Message::User(UserMessage {
+            role: RoleUser,
+            content: UserContent::Text("blocked request".to_string()),
+            timestamp: 0,
+        })],
+        ..Default::default()
+    };
+    let explanation = "This request triggered restrictions on violative cyber content and was blocked under Anthropic's Usage Policy. To learn more, provide feedback, or request an exemption based on how you use Claude, visit our help center: https://support.claude.com/en/articles/14604842-real-time-cyber-safeguards-on-claude.";
+    let events = vec![
+        (
+            "message_start".to_string(),
+            serde_json::json!({
+                "type": "message_start",
+                "message": {
+                    "id": "msg_01XFUDYJgAACzvnptvVoYEL",
+                    "usage": {
+                        "input_tokens": 412,
+                        "output_tokens": 0,
+                        "cache_read_input_tokens": 0,
+                        "cache_creation_input_tokens": 0,
+                    },
+                },
+            })
+            .to_string(),
+        ),
+        (
+            "message_delta".to_string(),
+            serde_json::json!({
+                "type": "message_delta",
+                "delta": {
+                    "stop_reason": "refusal",
+                    "stop_details": {
+                        "type": "refusal",
+                        "category": "cyber",
+                        "explanation": explanation,
+                    },
+                },
+                "usage": {
+                    "input_tokens": 412,
+                    "output_tokens": 0,
+                    "cache_read_input_tokens": 0,
+                    "cache_creation_input_tokens": 0,
+                },
+            })
+            .to_string(),
+        ),
+        message_stop(),
+    ];
+
+    let fetch = Arc::new(SseMockFetch {
+        body: create_sse_response(&events),
+        requests: std::sync::Mutex::new(Vec::new()),
+    });
+
+    let result = stream(&model, &context, Some(&sse_options(fetch)))
+        .result()
+        .await;
+
+    assert_eq!(result.stop_reason, StopReason::Error);
+    assert_eq!(result.raw_stop_reason.as_deref(), Some("refusal"));
+    assert_eq!(result.error_message.as_deref(), Some(explanation));
+}
+
+#[tokio::test]
+async fn preserves_sensitive_stop_reasons_with_a_descriptive_error_message() {
+    let context = Context {
+        messages: vec![Message::User(UserMessage {
+            role: RoleUser,
+            content: UserContent::Text("blocked request".to_string()),
+            timestamp: 0,
+        })],
+        ..Default::default()
+    };
+    let events = vec![
+        message_start("msg_sensitive", 12),
+        (
+            "message_delta".to_string(),
+            serde_json::json!({
+                "type": "message_delta",
+                "delta": { "stop_reason": "sensitive" },
+                "usage": {
+                    "input_tokens": 12,
+                    "output_tokens": 0,
+                    "cache_read_input_tokens": 0,
+                    "cache_creation_input_tokens": 0,
+                },
+            })
+            .to_string(),
+        ),
+        message_stop(),
+    ];
+
+    let fetch = Arc::new(SseMockFetch {
+        body: create_sse_response(&events),
+        requests: std::sync::Mutex::new(Vec::new()),
+    });
+
+    let result = stream(&model(), &context, Some(&sse_options(fetch)))
+        .result()
+        .await;
+
+    assert_eq!(result.stop_reason, StopReason::Error);
+    assert_eq!(result.raw_stop_reason.as_deref(), Some("sensitive"));
+    assert_eq!(
+        result.error_message.as_deref(),
+        Some("Provider stopped with: sensitive")
+    );
+}
+
+#[tokio::test]
+async fn treats_message_delta_without_usage_as_a_no_op_for_usage_accumulation() {
+    // The message_delta fixture drops its usage object entirely; input tokens
+    // captured at message_start must survive.
+    let events: Vec<(String, String)> = minimal_anthropic_events()
+        .into_iter()
+        .map(|event| {
+            if event.0 == "message_delta" {
+                (
+                    "message_delta".to_string(),
+                    serde_json::json!({
+                        "type": "message_delta",
+                        "delta": { "stop_reason": "end_turn" },
+                    })
+                    .to_string(),
+                )
+            } else {
+                event
+            }
+        })
+        .collect();
+
+    let fetch = Arc::new(SseMockFetch {
+        body: create_sse_response(&events),
+        requests: std::sync::Mutex::new(Vec::new()),
+    });
+
+    let result = stream(&model(), &context(), Some(&sse_options(fetch)))
+        .result()
+        .await;
+
+    assert_eq!(result.stop_reason, StopReason::Stop);
+    assert!(result.error_message.is_none());
+    assert_eq!(
+        result.content,
+        vec![AssistantContent::Text(pi_core::ai::types::TextContent {
+            text: "Hello".to_string(),
+            ..Default::default()
+        })]
+    );
+    assert_eq!(result.usage.input, 12);
+    assert_eq!(result.usage.total_tokens, 12);
+}
+
+#[tokio::test]
+async fn ignores_unknown_sse_events_after_message_stop() {
+    let mut events = minimal_anthropic_events();
+    events.push(("done".to_string(), "[DONE]".to_string()));
+    events.push(("proxy.stats".to_string(), "not json".to_string()));
+
+    let fetch = Arc::new(SseMockFetch {
+        body: create_sse_response(&events),
+        requests: std::sync::Mutex::new(Vec::new()),
+    });
+
+    let result = stream(&model(), &context(), Some(&sse_options(fetch)))
+        .result()
+        .await;
+
+    assert_eq!(result.stop_reason, StopReason::Stop);
+    assert!(result.error_message.is_none());
+    assert_eq!(
+        result.content,
+        vec![AssistantContent::Text(pi_core::ai::types::TextContent {
+            text: "Hello".to_string(),
+            ..Default::default()
+        })]
+    );
 }
 
 #[tokio::test]

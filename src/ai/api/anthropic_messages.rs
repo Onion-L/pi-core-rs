@@ -1654,8 +1654,19 @@ async fn run_stream(
                                 .get("signature")
                                 .and_then(Value::as_str)
                                 .unwrap_or_default();
+                            // The TS blocks array aliases `output.content`, so
+                            // the appended signature is observable on the
+                            // final message; mirror that in both copies.
                             if let Some((_, AssistantContent::Thinking(block), _)) =
                                 blocks.get_mut(position)
+                            {
+                                let existing = block.thinking_signature.clone().unwrap_or_default();
+                                let mut combined = existing;
+                                combined.push_str(signature);
+                                block.thinking_signature = Some(combined);
+                            }
+                            if let Some(AssistantContent::Thinking(block)) =
+                                output.content.get_mut(position)
                             {
                                 let existing = block.thinking_signature.clone().unwrap_or_default();
                                 let mut combined = existing;
