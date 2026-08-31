@@ -316,7 +316,7 @@ pub struct NavigateOptions {
 
 /// Port of the inline `compact` options.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct CompactOptions {
+pub struct HarnessCompactOptions {
     pub custom_instructions: Option<String>,
 }
 
@@ -564,7 +564,7 @@ pub trait AgentLane: Send + Sync {
     ) -> BoxFuture<'_, Result<RunResult, HarnessScaffoldError>>;
     fn compact(
         &self,
-        options: Option<CompactOptions>,
+        options: Option<HarnessCompactOptions>,
     ) -> BoxFuture<'_, Result<CompactionResult, HarnessScaffoldError>>;
     fn navigate_tree(
         &self,
@@ -755,7 +755,7 @@ impl AgentHarness {
     }
     pub async fn compact(
         &self,
-        _options: Option<CompactOptions>,
+        _options: Option<HarnessCompactOptions>,
     ) -> Result<CompactionResult, HarnessScaffoldError> {
         self.unavailable("compact")
     }
@@ -957,7 +957,7 @@ impl AgentLane for AgentHarness {
 
     fn compact(
         &self,
-        options: Option<CompactOptions>,
+        options: Option<HarnessCompactOptions>,
     ) -> BoxFuture<'_, Result<CompactionResult, HarnessScaffoldError>> {
         Box::pin(self.compact(options))
     }

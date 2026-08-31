@@ -88,7 +88,7 @@ upstream package).
 | `src/api/openrouter-images.lazy.ts` | `src/ai/providers/builtin.rs` | done (direct dispatch adapter) |
 | `src/api/openrouter-images.ts` | `src/ai/api/openrouter_images.rs` | done (request/response handling, retry, and usage parsing ported; the abort signal rides on the request like the OpenAI-SDK signal wiring, and the transport rejects an already-aborted signal) |
 | `src/api/pi-messages.lazy.ts` | `src/ai/providers/apis.rs` | done |
-| `src/api/pi-messages.ts` | `src/ai/api/pi_messages.rs` | done (`PiMessagesResponseError` shape is the public `StreamFailure`, threaded into the error event; typed `PiMessagesEvent` union remains partial) |
+| `src/api/pi-messages.ts` | `src/ai/api/pi_messages.rs` | partial (`PiMessagesResponseError` shape is the public `StreamFailure`, threaded into the error event; typed `PiMessagesEvent` union remains partial) |
 | `src/api/simple-options.ts` | `src/ai/api/simple_options.rs` | done |
 | `src/api/transform-messages.ts` | `src/ai/api/transform_messages.rs` | done |
 | `src/auth/context.ts` | `src/ai/auth/context.rs` | done |
@@ -212,7 +212,7 @@ upstream package).
 | `src/providers/zai.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
 | `src/providers/zai.ts` | `src/ai/providers/builtin.rs` | done |
 | `src/session-resources.ts` | `src/ai/session_resources.rs` | done |
-| `src/types.ts` | `src/ai/types.rs` | done |
+| `src/types.ts` | `src/ai/types.rs` | partial (`TextSignatureV1` encoding exists in `openai_responses_shared.rs`, but the named public type is not exposed) |
 | `src/utils/abort-signals.ts` | `src/ai/utils/abort.rs` | done |
 | `src/utils/abort.ts` | `src/ai/utils/abort.rs` | done |
 | `src/utils/deferred-tools.ts` | `src/ai/utils/deferred_tools.rs` | done |
@@ -429,7 +429,7 @@ Closed implementable gaps:
 |---|---|---|
 | `src/agent-loop.ts` | `src/agent/agent_loop.rs` | done |
 | `src/agent.ts` | `src/agent/agent.rs` | done |
-| `src/harness/agent-harness.ts` | `src/agent/harness/agent_harness.rs` | done (the v2 scaffold: configuration surface with defensive copies, record-free create gate, and explicit HarnessNotImplemented/HarnessClosed rejections for the unimplemented operation surface) |
+| `src/harness/agent-harness.ts` | `src/agent/harness/agent_harness.rs` | done (full v2 public contract; unfinished operations explicitly reject with HarnessNotImplemented/HarnessClosed) |
 | `src/harness/compaction/branch-summarization.ts` | `src/agent/harness/compaction/branch_summarization.rs` | done |
 | `src/harness/compaction/compaction.ts` | `src/agent/harness/compaction/compaction.rs` | done |
 | `src/harness/compaction/utils.ts` | `src/agent/harness/compaction/utils.rs` | done |
@@ -453,7 +453,7 @@ Closed implementable gaps:
 | `src/harness/session/testing/conformance.ts` | `src/agent/harness/session/testing/mod.rs` | done (28 of the 30 upstream cases across every group with the TS assertion strength; the two `rejects non-JSON entries/records` cases are unrepresentable — Rust's strongly typed `Entry`/`LaneRecord` cannot carry non-serializable values) |
 | `src/harness/session/testing/index.ts` | `src/agent/harness/session/testing/mod.rs` | done |
 | `src/harness/session/testing/types.ts` | `src/agent/harness/session/testing/mod.rs` | done |
-| `src/harness/session/types.ts` | `src/agent/harness/session/types.rs` | done |
+| `src/harness/session/types.ts` | `src/agent/harness/session/types.rs` | done (the Rust enums remain canonical; TS member names are public aliases with provisioned-entry constructors) |
 | `src/harness/skills.ts` | `src/agent/harness/skills.rs` | done (the ignore npm package is replaced by a small gitignore-style matcher covering the loader pattern shapes) |
 | `src/harness/system-prompt.ts` | `src/agent/harness/system_prompt.rs` | done |
 | `src/harness/telemetry.ts` | `src/agent/harness/telemetry.rs (+ data/telemetry-schemas.json via scripts/oracle/export-agent-telemetry-schemas.mts)` | done (schemas embedded verbatim from the oracle; conditional-type vocabularies remain compile-time-only) |
@@ -462,7 +462,7 @@ Closed implementable gaps:
 | `src/harness/tools/edit.ts` | `src/agent/harness/tools/edit.rs` | done |
 | `src/harness/tools/file-mutation-queue.ts` | `src/agent/harness/tools/file_mutation_queue.rs` | done (WeakMap keying becomes an Arc-address-keyed registry) |
 | `src/harness/tools/image.ts` | `src/agent/harness/tools/image.rs` | done |
-| `src/harness/tools/index.ts` | `src/agent/harness/tools/mod.rs` | done |
+| `src/harness/tools/index.ts` | `src/agent/harness/tools/mod.rs` | done (public tool input/detail types and edit replacement helper included) |
 | `src/harness/tools/path-utils.ts` | `src/agent/harness/tools/path_utils.rs` | done |
 | `src/harness/tools/read.ts` | `src/agent/harness/tools/read.rs` | done |
 | `src/harness/tools/tool-context.ts` | `src/agent/harness/tools/tool_context.rs` | done |
@@ -471,12 +471,12 @@ Closed implementable gaps:
 | `src/harness/utils/shell-output.ts` | `src/agent/harness/utils/shell_output.rs` | done (onChunk receives the progress snapshot computed for that chunk) |
 | `src/harness/utils/truncate.ts` | `src/agent/harness/utils/truncate.rs` | done (unpaired-surrogate inputs are unrepresentable in Rust strings; fuzz runs over the valid UTF-8 alphabet) |
 | `src/index.ts` | `src/agent/mod.rs` | done |
-| `src/node.ts` | `src/agent/node.rs` | done |
+| `src/node.ts` | `src/agent/node.rs` | done (root agent facade plus `NodeExecutionEnv`) |
 | `src/proxy.ts` | `src/agent/proxy.rs` | done (request runs through the crate `HttpFetch` transport, injectable via `ProxyStreamOptions.fetch`, instead of `globalThis.fetch`; cancellation is observed between body chunks) |
 | `src/search/index.ts` | `src/agent/search/mod.rs` | done |
 | `src/search/scanning.ts` | `src/agent/search/mod.rs` | done |
 | `src/stream-fn.ts` | `src/agent/stream_fn.rs` | done |
-| `src/types.ts` | `src/agent/types.rs` (+ `src/ai/types.rs` for the shared LLM types) | done |
+| `src/types.ts` | `src/agent/types.rs` (+ `src/ai/types.rs` for the shared LLM types) | partial (`AgentState` remains encapsulated behind public accessors) |
 
 ### Documented deviations (agent core)
 
