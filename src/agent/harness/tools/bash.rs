@@ -85,6 +85,7 @@ pub fn create_bash_tool(
         constrained_sampling: None,
         prepare_arguments: None,
         execution_mode: None,
+        replay: None,
         execute: Arc::new(
             move |_tool_call_id: &str,
                   params: &serde_json::Value,

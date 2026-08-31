@@ -84,6 +84,8 @@ pub struct AgentHarnessTool {
     pub constrained_sampling: Option<crate::ai::types::ToolConstrainedSampling>,
     pub prepare_arguments: Option<crate::agent::types::PrepareArgumentsFn>,
     pub execution_mode: Option<crate::agent::types::ToolExecutionMode>,
+    /// Whether completed calls may be replayed while rebuilding a run.
+    pub replay: Option<crate::agent::harness::agent_harness::ToolReplay>,
     /// Executes the tool call with the context resolved for the current
     /// turn snapshot.
     pub execute: AgentHarnessToolExecuteFn,

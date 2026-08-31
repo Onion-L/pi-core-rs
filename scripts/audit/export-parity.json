@@ -4035,11 +4035,11 @@
         "reason": "TypeScript discriminated result envelope; Rust models this as Result<CancelQueuedOutcome, HarnessRejection> carrying the same data."
       },
       "RecordUsageResult": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/agent-harness.ts"
         ],
-        "reason": "recordUsage result pending the harness public-contract commit."
+        "rust": "RecordUsageResult"
       },
       "AbortResult": {
         "status": "exception",
@@ -4065,18 +4065,18 @@
         "reason": "TypeScript discriminated result envelope; Rust models this as Result<ResumeOutcome, HarnessRejection> carrying the same data."
       },
       "CreateLaneResult": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/agent-harness.ts"
         ],
-        "reason": "createLane result pending the harness public-contract commit."
+        "rust": "CreateLaneResult"
       },
       "NavigateOptions": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/agent-harness.ts"
         ],
-        "reason": "Navigation options pending the harness public-contract commit."
+        "rust": "NavigateOptions"
       },
       "SuspendedOperation": {
         "status": "mapped",
@@ -4101,25 +4101,25 @@
         "note": "Same queued-message shape; renamed in Rust."
       },
       "LaneSnapshot": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/agent-harness.ts"
         ],
-        "reason": "Lane snapshot pending the harness public-contract commit."
+        "rust": "LaneSnapshot"
       },
       "SessionSnapshot": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/agent-harness.ts"
         ],
-        "reason": "Session snapshot pending the harness public-contract commit."
+        "rust": "SessionSnapshot"
       },
       "ActionInfo": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/agent-harness.ts"
         ],
-        "reason": "Action info pending the harness public-contract commit."
+        "rust": "ActionInfo"
       },
       "HookName": {
         "status": "mapped",
@@ -4130,11 +4130,11 @@
         "note": "String-literal union; Rust mirrors it as the HOOK_NAMES constant list."
       },
       "Hooks": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/agent-harness.ts"
         ],
-        "reason": "Hooks/events registries pending the harness public-contract commit."
+        "rust": "Hooks"
       },
       "Events": {
         "status": "mapped",
@@ -4175,11 +4175,11 @@
         "note": "Rust option fields are Option<T>, covering TS Partial<> semantics."
       },
       "EntryProjector": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/agent-harness.ts"
         ],
-        "reason": "Entry projector type pending the harness public-contract commit."
+        "rust": "EntryProjector"
       },
       "AgentHarnessOptions": {
         "status": "mapped",
@@ -4197,11 +4197,11 @@
         ]
       },
       "AgentLane": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/agent-harness.ts"
         ],
-        "reason": "Lane interface pending the harness public-contract commit."
+        "rust": "AgentLane"
       },
       "AgentHarness": {
         "status": "mapped",
@@ -4484,18 +4484,18 @@
         ]
       },
       "RunStartEvent": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/events.ts"
         ],
-        "reason": "Typed run-start event pending the harness public-contract commit (HarnessEvent enum exists)."
+        "rust": "RunStartEvent"
       },
       "RunEndEvent": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/events.ts"
         ],
-        "reason": "Typed run-end event pending the harness public-contract commit (HarnessEvent enum exists)."
+        "rust": "RunEndEvent"
       },
       "HarnessEvent": {
         "status": "mapped",
@@ -4505,11 +4505,11 @@
         ]
       },
       "HarnessEventType": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/events.ts"
         ],
-        "reason": "Event-type union pending the harness public-contract commit (HarnessEvent::event_type exists)."
+        "rust": "HarnessEventType"
       },
       "HarnessEventOfType": {
         "status": "exception",

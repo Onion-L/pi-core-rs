@@ -29,6 +29,7 @@ pub fn create_write_tool() -> crate::agent::harness::types::AgentHarnessTool {
         constrained_sampling: None,
         prepare_arguments: None,
         execution_mode: None,
+        replay: None,
         execute: Arc::new(
             |_tool_call_id: &str,
              params: &serde_json::Value,

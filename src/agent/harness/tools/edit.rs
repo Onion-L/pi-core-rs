@@ -142,6 +142,7 @@ pub fn create_edit_tool() -> crate::agent::harness::types::AgentHarnessTool {
         constrained_sampling: None,
         prepare_arguments: Some(Arc::new(prepare_edit_arguments)),
         execution_mode: None,
+        replay: None,
         execute: Arc::new(
             |_tool_call_id: &str,
              params: &serde_json::Value,

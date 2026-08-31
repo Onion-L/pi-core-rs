@@ -5,10 +5,13 @@ use std::sync::Arc;
 use futures::FutureExt as _;
 
 use pi_core::agent::harness::agent_harness::{
-    AgentHarness, AgentHarnessOptions, HarnessScaffoldError, Resources,
+    AgentHarness, AgentHarnessOptions, HarnessScaffoldError, PromptInput, QueueInput, Resources,
+    ToolReplay,
 };
+use pi_core::agent::harness::events::HarnessEventType;
 use pi_core::agent::harness::session::memory::{InMemorySessionStorage, Session};
 use pi_core::agent::harness::session::types::{LaneRecord, OperationIntent, SessionMetadata};
+use pi_core::agent::harness::tools::write::create_write_tool;
 use pi_core::agent::harness::types::{PromptTemplate, Skill};
 use pi_core::agent::types::{QueueMode, ThinkingLevel};
 use pi_core::ai::compat::get_model;
@@ -34,11 +37,19 @@ async fn create_harness_with(session: Session) -> Arc<AgentHarness> {
         model: get_model("google", "gemini-2.5-flash").expect("catalog model"),
         thinking_level: None,
         active_tool_names: None,
+        tools: None,
+        tool_context: None,
+        system_prompt: None,
         stream_options: None,
         retry: None,
         compaction: None,
         steering_mode: None,
         follow_up_mode: None,
+        tool_execution: None,
+        drive: None,
+        to_provider_messages: None,
+        entry_projectors: None,
+        context: None,
         resources: None,
     })
     .await
@@ -71,11 +82,19 @@ async fn opens_only_record_free_sessions_before_restore_is_implemented() {
         model: get_model("google", "gemini-2.5-flash").expect("catalog model"),
         thinking_level: None,
         active_tool_names: None,
+        tools: None,
+        tool_context: None,
+        system_prompt: None,
         stream_options: None,
         retry: None,
         compaction: None,
         steering_mode: None,
         follow_up_mode: None,
+        tool_execution: None,
+        drive: None,
+        to_provider_messages: None,
+        entry_projectors: None,
+        context: None,
         resources: None,
     })
     .await
@@ -99,11 +118,19 @@ async fn opens_only_record_free_sessions_before_restore_is_implemented() {
         model: get_model("google", "gemini-2.5-flash").expect("catalog model"),
         thinking_level: None,
         active_tool_names: None,
+        tools: None,
+        tool_context: None,
+        system_prompt: None,
         stream_options: None,
         retry: None,
         compaction: None,
         steering_mode: None,
         follow_up_mode: None,
+        tool_execution: None,
+        drive: None,
+        to_provider_messages: None,
+        entry_projectors: None,
+        context: None,
         resources: None,
     })
     .await;
@@ -136,9 +163,17 @@ async fn keeps_scaffold_safe_configuration_as_defensive_copies() {
     harness.set_active_tools(active_tools.clone()).await;
     active_tools.push("mutated".to_string());
     assert_eq!(harness.get_active_tools().await, ["one".to_string()]);
+
+    let mut tool = create_write_tool();
+    tool.replay = Some(ToolReplay::Safe);
+    harness.set_tools(vec![tool], None).await;
+    assert_eq!(harness.get_active_tools().await, ["write".to_string()]);
+    let tools = harness.get_tools().await;
+    assert_eq!(tools.len(), 1);
+    assert_eq!(tools[0].replay, Some(ToolReplay::Safe));
     let mut read_active_tools = harness.get_active_tools().await;
     read_active_tools.push("mutated".to_string());
-    assert_eq!(harness.get_active_tools().await, ["one".to_string()]);
+    assert_eq!(harness.get_active_tools().await, ["write".to_string()]);
 
     let resources = Resources {
         skills: Some(vec![Skill {
@@ -233,52 +268,108 @@ async fn rejects_every_unfinished_public_operation_explicitly() {
     >;
 
     let cases: Vec<(&str, BoxFuture)> = vec![
-        ("prompt", Box::pin(harness.prompt().map(|r| r.map(|_| ())))),
-        ("skill", Box::pin(harness.skill().map(|r| r.map(|_| ())))),
+        (
+            "prompt",
+            Box::pin(
+                harness
+                    .prompt(PromptInput::Messages(Vec::new()))
+                    .map(|r| r.map(|_| ())),
+            ),
+        ),
+        (
+            "skill",
+            Box::pin(harness.skill("skill", None).map(|r| r.map(|_| ()))),
+        ),
         (
             "promptFromTemplate",
-            Box::pin(harness.prompt_from_template().map(|r| r.map(|_| ()))),
+            Box::pin(
+                harness
+                    .prompt_from_template("template", None)
+                    .map(|r| r.map(|_| ())),
+            ),
         ),
         (
             "compact",
-            Box::pin(harness.compact().map(|r| r.map(|_| ()))),
+            Box::pin(harness.compact(None).map(|r| r.map(|_| ()))),
         ),
         (
             "navigateTree",
-            Box::pin(harness.navigate_tree().map(|r| r.map(|_| ()))),
+            Box::pin(harness.navigate_tree(None, None).map(|r| r.map(|_| ()))),
         ),
         ("resume", Box::pin(harness.resume().map(|r| r.map(|_| ())))),
         ("abort", Box::pin(harness.abort().map(|r| r.map(|_| ())))),
-        ("steer", Box::pin(harness.steer().map(|r| r.map(|_| ())))),
+        (
+            "steer",
+            Box::pin(
+                harness
+                    .steer(QueueInput::Text {
+                        text: String::new(),
+                        images: None,
+                    })
+                    .map(|r| r.map(|_| ())),
+            ),
+        ),
         (
             "followUp",
-            Box::pin(harness.follow_up().map(|r| r.map(|_| ()))),
+            Box::pin(
+                harness
+                    .follow_up(QueueInput::Text {
+                        text: String::new(),
+                        images: None,
+                    })
+                    .map(|r| r.map(|_| ())),
+            ),
         ),
         (
             "nextRun",
-            Box::pin(harness.next_run().map(|r| r.map(|_| ()))),
+            Box::pin(
+                harness
+                    .next_run(QueueInput::Text {
+                        text: String::new(),
+                        images: None,
+                    })
+                    .map(|r| r.map(|_| ())),
+            ),
         ),
         (
             "cancelQueued",
-            Box::pin(harness.cancel_queued().map(|r| r.map(|_| ()))),
+            Box::pin(harness.cancel_queued("entry").map(|r| r.map(|_| ()))),
         ),
         (
             "recordUsage",
             Box::pin(
                 harness
-                    .record_usage(Default::default())
+                    .record_usage(Default::default(), None)
                     .map(|r| r.map(|_| ())),
             ),
         ),
         ("waitForIdle", Box::pin(harness.wait_for_idle())),
-        ("runWhenIdle", Box::pin(harness.run_when_idle())),
-        ("peekAction", Box::pin(harness.peek_action())),
-        ("executeAction", Box::pin(harness.execute_action())),
+        (
+            "runWhenIdle",
+            Box::pin(harness.run_when_idle(Arc::new(|| Box::pin(async {})))),
+        ),
+        (
+            "peekAction",
+            Box::pin(harness.peek_action().map(|r| r.map(|_| ()))),
+        ),
+        (
+            "executeAction",
+            Box::pin(harness.execute_action().map(|r| r.map(|_| ()))),
+        ),
         ("runToCompletion", Box::pin(harness.run_to_completion())),
-        ("watch", Box::pin(harness.watch())),
-        ("lane", Box::pin(harness.lane())),
-        ("createLane", Box::pin(harness.create_lane())),
-        ("watchSession", Box::pin(harness.watch_session())),
+        ("watch", Box::pin(harness.watch().map(|r| r.map(|_| ())))),
+        (
+            "lane",
+            Box::pin(harness.lane("lane").map(|r| r.map(|_| ()))),
+        ),
+        (
+            "createLane",
+            Box::pin(harness.create_lane("lane", None).map(|r| r.map(|_| ()))),
+        ),
+        (
+            "watchSession",
+            Box::pin(harness.watch_session().map(|r| r.map(|_| ()))),
+        ),
     ];
 
     for (operation, future) in cases {
@@ -298,11 +389,15 @@ async fn rejects_every_unfinished_public_operation_explicitly() {
         other => panic!("lanes: unexpected error {other:?}"),
     }
     assert!(matches!(
-        harness.register_hook(),
+        harness.register_hook(
+            "before_run",
+            Arc::new(|event| Box::pin(async move { event })),
+            None,
+        ),
         Err(HarnessScaffoldError::NotImplemented(_))
     ));
     assert!(matches!(
-        harness.register_event_listener(),
+        harness.register_event_listener(HarnessEventType::RunStart, Arc::new(|_| {})),
         Err(HarnessScaffoldError::NotImplemented(_))
     ));
 }
@@ -312,7 +407,7 @@ async fn reports_harness_closed_for_unfinished_operations_after_close() {
     let harness = create_harness().await;
     harness.close().await;
 
-    let result = harness.prompt().await;
+    let result = harness.prompt(PromptInput::Messages(Vec::new())).await;
     match result {
         Err(HarnessScaffoldError::Closed(_)) => {}
         other => panic!("unexpected prompt result: {:?}", other.is_err()),
@@ -322,11 +417,15 @@ async fn reports_harness_closed_for_unfinished_operations_after_close() {
         HarnessScaffoldError::Closed(_)
     ));
     assert!(matches!(
-        harness.register_hook(),
+        harness.register_hook(
+            "before_run",
+            Arc::new(|event| Box::pin(async move { event })),
+            None,
+        ),
         Err(HarnessScaffoldError::Closed(_))
     ));
     assert!(matches!(
-        harness.register_event_listener(),
+        harness.register_event_listener(HarnessEventType::RunStart, Arc::new(|_| {})),
         Err(HarnessScaffoldError::Closed(_))
     ));
 }

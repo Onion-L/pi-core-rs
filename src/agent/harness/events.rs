@@ -26,6 +26,38 @@ impl RunOutcome {
     }
 }
 
+/// Port of `HarnessEventType`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum HarnessEventType {
+    RunStart,
+    RunEnd,
+}
+
+impl HarnessEventType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::RunStart => "run_start",
+            Self::RunEnd => "run_end",
+        }
+    }
+}
+
+/// Port of `RunStartEvent`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RunStartEvent {
+    pub lane: String,
+    pub run_id: String,
+}
+
+/// Port of `RunEndEvent`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RunEndEvent {
+    pub lane: String,
+    pub run_id: String,
+    pub outcome: RunOutcome,
+    pub leaf_id: String,
+}
+
 /// Port of `HarnessEvent`.
 #[derive(Clone, Debug, PartialEq)]
 pub enum HarnessEvent {
@@ -43,10 +75,10 @@ pub enum HarnessEvent {
 
 impl HarnessEvent {
     /// The event discriminant.
-    pub fn event_type(&self) -> &'static str {
+    pub fn event_type(&self) -> HarnessEventType {
         match self {
-            HarnessEvent::RunStart { .. } => "run_start",
-            HarnessEvent::RunEnd { .. } => "run_end",
+            HarnessEvent::RunStart { .. } => HarnessEventType::RunStart,
+            HarnessEvent::RunEnd { .. } => HarnessEventType::RunEnd,
         }
     }
 }
@@ -58,7 +90,7 @@ pub type HarnessEventListener = Arc<dyn Fn(&HarnessEvent) + Send + Sync>;
 /// Port of `HarnessEventBus`.
 #[derive(Default)]
 pub struct HarnessEventBus {
-    listeners: Mutex<HashMap<&'static str, Vec<HarnessEventListener>>>,
+    listeners: Mutex<HashMap<HarnessEventType, Vec<HarnessEventListener>>>,
     watch_listeners: Mutex<Vec<Arc<Mutex<WatchEntry>>>>,
 }
 
@@ -74,7 +106,7 @@ impl HarnessEventBus {
 
     /// Register a listener for future events of one type; returns an
     /// unsubscribe token id. Earlier events are not replayed.
-    pub fn on(&self, event_type: &'static str, listener: HarnessEventListener) -> usize {
+    pub fn on(&self, event_type: HarnessEventType, listener: HarnessEventListener) -> usize {
         let mut listeners = lock(&self.listeners);
         let entry = listeners.entry(event_type).or_default();
         entry.push(listener);
@@ -83,12 +115,12 @@ impl HarnessEventBus {
     }
 
     /// Remove a listener registered via [`HarnessEventBus::on`].
-    pub fn off(&self, event_type: &'static str, listener_id: usize) {
+    pub fn off(&self, event_type: HarnessEventType, listener_id: usize) {
         let mut listeners = lock(&self.listeners);
-        if let Some(entry) = listeners.get_mut(event_type) {
+        if let Some(entry) = listeners.get_mut(&event_type) {
             entry.retain(|listener| (Arc::as_ptr(listener) as *const () as usize) != listener_id);
             if entry.is_empty() {
-                listeners.remove(event_type);
+                listeners.remove(&event_type);
             }
         }
     }
@@ -99,7 +131,7 @@ impl HarnessEventBus {
     pub fn emit(&self, event: HarnessEvent) {
         let event_type = event.event_type();
         let direct = lock(&self.listeners)
-            .get(event_type)
+            .get(&event_type)
             .cloned()
             .unwrap_or_default();
         for listener in direct {
@@ -117,23 +149,26 @@ impl HarnessEventBus {
     }
 
     /// Port of `watch`: capture a snapshot, buffer events until `start`.
-    pub fn watch<T>(&self, capture_snapshot: impl FnOnce() -> T) -> (T, WatchHandle) {
+    pub fn watch<T>(&self, capture_snapshot: impl FnOnce() -> T) -> WatchHandle<T> {
         let entry = Arc::new(Mutex::new(WatchEntry {
             listener: None,
             buffered: Vec::new(),
         }));
         lock(&self.watch_listeners).push(Arc::clone(&entry));
-        let snapshot = capture_snapshot();
-        (snapshot, WatchHandle { entry })
+        WatchHandle {
+            snapshot: capture_snapshot(),
+            entry,
+        }
     }
 }
 
 /// Port of `WatchHandle`.
-pub struct WatchHandle {
+pub struct WatchHandle<T> {
+    pub snapshot: T,
     entry: Arc<Mutex<WatchEntry>>,
 }
 
-impl WatchHandle {
+impl<T> WatchHandle<T> {
     /// Start delivering buffered and future events to the listener.
     pub fn start(&self, listener: HarnessEventListener) {
         let mut entry = lock(&self.entry);
