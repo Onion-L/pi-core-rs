@@ -208,11 +208,26 @@ fn register_builtin_api_providers_locked(state: &mut RegistryState) {
             let id = state.next_id;
             state.entry_ids.insert(api.clone(), id);
             state.providers.insert(api.clone(), entry);
-            state.builtin_ids.insert(api, id);
         }
-        // Already registered (user override): the identity check must not
-        // treat it as the built-in instance, so no id is recorded.
+        // The TS loop re-reads `getApiProvider(api)` unconditionally after the
+        // conditional registration, so an entry that already existed (a test
+        // or extension override) is recorded as the built-in instance too.
+        if let Some(id) = state.entry_ids.get(&api) {
+            state.builtin_ids.insert(api, *id);
+        }
     }
+}
+
+/// Port of `registerBuiltInApiProviders`: registers the builtin API
+/// implementations without clobbering existing entries, then records each
+/// builtin api's current entry as the built-in instance. Safe to call after
+/// an override has been registered (matching the exported TS function).
+pub fn register_built_in_api_providers() {
+    ensure_builtin_registered();
+    let mut state = registry()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    register_builtin_api_providers_locked(&mut state);
 }
 
 /// Port of `registerApiProvider`.

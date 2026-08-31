@@ -110,14 +110,14 @@ upstream package).
 | `src/bedrock-provider.ts` | | exception (Bun static-embed module object; the Rust adapter is `src/ai/providers/apis.rs::bedrock_converse_stream_api`) |
 | `src/bun-oauth.ts` | | exception (Bun binary loader registration; `registerBundledOAuthFlowLoaders` has no Rust counterpart — flows link statically, documented in `src/ai/auth/oauth/load.rs`) |
 | `src/cli.ts` | `src/ai/cli.rs` + `src/bin/pi-ai.rs` | done (tests/ai_cli.rs; golden fixtures from scripts/oracle/generate-cli-goldens.mts; auth.json is written with the platform default mode like `writeFileSync` without a mode) |
-| `src/compat.ts` | `src/ai/compat.rs` | done (global api-provider registry, registerFauxProvider, env-key-injected global stream/complete, deprecated catalog reads) |
+| `src/compat.ts` | `src/ai/compat.rs` | done (global api-provider registry incl. the public `registerBuiltInApiProviders`, registerFauxProvider, env-key-injected global stream/complete, deprecated catalog reads) |
 | `src/compat/extension-oauth-types.ts` | `src/ai/compat.rs` | done |
 | `src/env-api-keys.ts` | `src/ai/env_api_keys.rs` | done |
 | `src/image-models.generated.ts` | `src/ai/models_generated.rs (embedded with models catalog)` | done |
 | `src/image-models.ts` | `src/ai/models_generated.rs` | done (`image_model`/`image_provider_ids`/`image_models_for_provider`) |
-| `src/images-api-registry.ts` | `src/ai/images.rs` | done (static dispatch; lazy module loading is a compile-time no-op in Rust) |
+| `src/images-api-registry.ts` | `src/ai/images.rs` | done (public registry: register/get with `sourceId`, api-mismatch wrapper, override semantics; the built-in OpenRouter entry is the default) |
 | `src/images-models.ts` | `src/ai/images_models.rs` | done |
-| `src/images.ts` | `src/ai/images.rs` | done |
+| `src/images.ts` | `src/ai/images.rs` | done (`generateImages` dispatches through the registry with the TS error text) |
 | `src/index.ts` | `src/ai/mod.rs` | done |
 | `src/legacy-api-aliases.ts` | `src/ai/compat.rs` | done (deprecated per-api stream aliases) |
 | `src/model-catalog.ts` | `src/ai/model_catalog.rs` | done (identity helper; TS generics are compile-time only) |
@@ -125,7 +125,7 @@ upstream package).
 | `src/models.generated.ts` | `src/ai/models_generated.rs (+ src/ai/data/models.generated.json via scripts/oracle/export-model-catalog.mts)` | done |
 | `src/models.ts` | `src/ai/models.rs` | done |
 | `src/oauth.ts` | `src/ai/compat.rs (type re-exports)` | done |
-| `src/providers/all.ts` | `src/ai/providers/builtin.rs` | done |
+| `src/providers/all.ts` | `src/ai/providers/builtin.rs` | done (every per-provider factory is public, incl. the `radiusProvider` re-export; the 39 `*_MODELS` constants are an exception — aggregate catalog) |
 | `src/providers/amazon-bedrock.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
 | `src/providers/amazon-bedrock.ts` | `src/ai/providers/amazon_bedrock.rs` | done |
 | `src/providers/ant-ling.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
@@ -159,7 +159,7 @@ upstream package).
 | `src/providers/groq.ts` | `src/ai/providers/builtin.rs` | done |
 | `src/providers/huggingface.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
 | `src/providers/huggingface.ts` | `src/ai/providers/builtin.rs` | done |
-| `src/providers/images/register-builtins.ts` | `src/ai/images.rs` | done (openrouter-images registered statically) |
+| `src/providers/images/register-builtins.ts` | `src/ai/images.rs` | done (public `registerBuiltInImagesApiProviders`; the TS module-load side effect maps to first-access init) |
 | `src/providers/kimi-coding.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
 | `src/providers/kimi-coding.ts` | `src/ai/providers/builtin.rs` | done |
 | `src/providers/minimax-cn.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |

@@ -1455,3 +1455,210 @@ async fn reports_bedrock_as_configured_from_ambient_aws_credentials_without_an_a
             .is_none()
     );
 }
+
+// Per-provider factories (`all.ts` exports). The thin wrappers must produce
+// exactly what the aggregate `builtinProviders()` path builds, so each case
+// pins the provider id and a distinguishing field from the uniform spec.
+#[test]
+fn per_provider_factories_match_the_all_ts_registry() {
+    use pi_core::ai::providers::builtin::{
+        ant_ling_provider, azure_openai_responses_provider, baseten_provider, cerebras_provider,
+        deepseek_provider, google_provider, groq_provider, huggingface_provider,
+        minimax_cn_provider, minimax_provider, mistral_provider, moonshotai_cn_provider,
+        moonshotai_provider, nvidia_provider, openai_provider, qwen_token_plan_cn_provider,
+        qwen_token_plan_individual_provider, qwen_token_plan_provider, radius_provider,
+        together_provider, vercel_ai_gateway_provider, xiaomi_provider,
+        xiaomi_token_plan_ams_provider, xiaomi_token_plan_cn_provider,
+        xiaomi_token_plan_sgp_provider, zai_coding_cn_provider, zai_provider,
+    };
+    use pi_core::ai::providers::radius::RadiusProviderOptions;
+
+    type FactoryCase<'a> = (
+        &'a str,
+        &'a str,
+        Option<&'a str>,
+        Arc<dyn pi_core::ai::models::Provider>,
+    );
+
+    let cases: Vec<FactoryCase> = vec![
+        (
+            "ant-ling",
+            "Ant Ling",
+            Some("https://api.ant-ling.com/v1"),
+            ant_ling_provider(),
+        ),
+        (
+            "baseten",
+            "Baseten",
+            Some("https://inference.baseten.co/v1"),
+            baseten_provider(),
+        ),
+        (
+            "cerebras",
+            "Cerebras",
+            Some("https://api.cerebras.ai/v1"),
+            cerebras_provider(),
+        ),
+        (
+            "deepseek",
+            "DeepSeek",
+            Some("https://api.deepseek.com"),
+            deepseek_provider(),
+        ),
+        (
+            "groq",
+            "Groq",
+            Some("https://api.groq.com/openai/v1"),
+            groq_provider(),
+        ),
+        (
+            "huggingface",
+            "Hugging Face",
+            Some("https://router.huggingface.co/v1"),
+            huggingface_provider(),
+        ),
+        (
+            "moonshotai",
+            "Moonshot AI",
+            Some("https://api.moonshot.ai/v1"),
+            moonshotai_provider(),
+        ),
+        (
+            "moonshotai-cn",
+            "Moonshot AI CN",
+            Some("https://api.moonshot.cn/v1"),
+            moonshotai_cn_provider(),
+        ),
+        (
+            "nvidia",
+            "NVIDIA",
+            Some("https://integrate.api.nvidia.com/v1"),
+            nvidia_provider(),
+        ),
+        (
+            "together",
+            "Together",
+            Some("https://api.together.ai/v1"),
+            together_provider(),
+        ),
+        (
+            "xiaomi",
+            "Xiaomi",
+            Some("https://api.xiaomimimo.com/v1"),
+            xiaomi_provider(),
+        ),
+        (
+            "xiaomi-token-plan-ams",
+            "Xiaomi Token Plan AMS",
+            Some("https://token-plan-ams.xiaomimimo.com/v1"),
+            xiaomi_token_plan_ams_provider(),
+        ),
+        (
+            "xiaomi-token-plan-cn",
+            "Xiaomi Token Plan CN",
+            Some("https://token-plan-cn.xiaomimimo.com/v1"),
+            xiaomi_token_plan_cn_provider(),
+        ),
+        (
+            "xiaomi-token-plan-sgp",
+            "Xiaomi Token Plan SGP",
+            Some("https://token-plan-sgp.xiaomimimo.com/v1"),
+            xiaomi_token_plan_sgp_provider(),
+        ),
+        (
+            "zai",
+            "Z.AI",
+            Some("https://api.z.ai/api/coding/paas/v4"),
+            zai_provider(),
+        ),
+        (
+            "zai-coding-cn",
+            "Z.AI Coding CN",
+            Some("https://open.bigmodel.cn/api/coding/paas/v4"),
+            zai_coding_cn_provider(),
+        ),
+        (
+            "qwen-token-plan",
+            "Qwen Token Plan",
+            Some("https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"),
+            qwen_token_plan_provider(),
+        ),
+        (
+            "qwen-token-plan-cn",
+            "Qwen Token Plan CN",
+            Some("https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"),
+            qwen_token_plan_cn_provider(),
+        ),
+        (
+            "qwen-token-plan-individual",
+            "Qwen Token Plan Individual",
+            Some("https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"),
+            qwen_token_plan_individual_provider(),
+        ),
+        (
+            "openai",
+            "OpenAI",
+            Some("https://api.openai.com/v1"),
+            openai_provider(),
+        ),
+        (
+            "azure-openai-responses",
+            "Azure OpenAI",
+            None,
+            azure_openai_responses_provider(),
+        ),
+        (
+            "mistral",
+            "Mistral",
+            Some("https://api.mistral.ai"),
+            mistral_provider(),
+        ),
+        (
+            "minimax",
+            "MiniMax",
+            Some("https://api.minimax.io/anthropic"),
+            minimax_provider(),
+        ),
+        (
+            "minimax-cn",
+            "MiniMax CN",
+            Some("https://api.minimaxi.com/anthropic"),
+            minimax_cn_provider(),
+        ),
+        (
+            "vercel-ai-gateway",
+            "Vercel AI Gateway",
+            Some("https://ai-gateway.vercel.sh"),
+            vercel_ai_gateway_provider(),
+        ),
+        (
+            "google",
+            "Google",
+            Some("https://generativelanguage.googleapis.com/v1beta"),
+            google_provider(),
+        ),
+    ];
+
+    let aggregate_ids: std::collections::BTreeSet<String> =
+        pi_core::ai::providers::builtin::builtin_providers()
+            .into_iter()
+            .map(|provider| provider.id().to_string())
+            .collect();
+
+    for (id, name, base_url, provider) in cases {
+        assert_eq!(provider.id(), id, "factory id for {id}");
+        assert_eq!(provider.name(), name, "factory name for {id}");
+        assert_eq!(provider.base_url(), base_url, "factory base_url for {id}");
+        assert!(
+            !provider.get_models().is_empty(),
+            "factory {id} must carry its generated catalog models"
+        );
+        assert!(
+            aggregate_ids.contains(id),
+            "factory {id} must be part of builtin_providers()"
+        );
+    }
+
+    let radius = radius_provider(RadiusProviderOptions::default());
+    assert_eq!(radius.id(), "radius");
+}

@@ -216,6 +216,192 @@ fn uniform_provider(
     })
 }
 
+fn uniform_completion_spec(id: &str) -> &'static UniformSpec {
+    UNIFORM_OPENAI_COMPLETIONS
+        .iter()
+        .find(|spec| spec.id == id)
+        .expect("uniform openai-completions spec is registered")
+}
+
+fn uniform_other_spec(id: &str) -> (&'static UniformSpec, fn() -> Arc<dyn ProviderStreams>) {
+    for (spec, api) in UNIFORM_OTHER {
+        if spec.id == id {
+            return (spec, *api);
+        }
+    }
+    panic!("uniform api-specific spec is registered")
+}
+
+/// Port of the `radiusProvider` re-export from `all.ts`.
+pub use crate::ai::providers::radius::radius_provider;
+
+/// Port of `antLingProvider`.
+pub fn ant_ling_provider() -> Arc<dyn Provider> {
+    uniform_provider(uniform_completion_spec("ant-ling"), openai_completions_api)
+}
+
+/// Port of `basetenProvider`.
+pub fn baseten_provider() -> Arc<dyn Provider> {
+    uniform_provider(uniform_completion_spec("baseten"), openai_completions_api)
+}
+
+/// Port of `cerebrasProvider`.
+pub fn cerebras_provider() -> Arc<dyn Provider> {
+    uniform_provider(uniform_completion_spec("cerebras"), openai_completions_api)
+}
+
+/// Port of `deepseekProvider`.
+pub fn deepseek_provider() -> Arc<dyn Provider> {
+    uniform_provider(uniform_completion_spec("deepseek"), openai_completions_api)
+}
+
+/// Port of `groqProvider`.
+pub fn groq_provider() -> Arc<dyn Provider> {
+    uniform_provider(uniform_completion_spec("groq"), openai_completions_api)
+}
+
+/// Port of `huggingfaceProvider`.
+pub fn huggingface_provider() -> Arc<dyn Provider> {
+    uniform_provider(
+        uniform_completion_spec("huggingface"),
+        openai_completions_api,
+    )
+}
+
+/// Port of `moonshotaiProvider`.
+pub fn moonshotai_provider() -> Arc<dyn Provider> {
+    uniform_provider(
+        uniform_completion_spec("moonshotai"),
+        openai_completions_api,
+    )
+}
+
+/// Port of `moonshotaiCnProvider`.
+pub fn moonshotai_cn_provider() -> Arc<dyn Provider> {
+    uniform_provider(
+        uniform_completion_spec("moonshotai-cn"),
+        openai_completions_api,
+    )
+}
+
+/// Port of `nvidiaProvider`.
+pub fn nvidia_provider() -> Arc<dyn Provider> {
+    uniform_provider(uniform_completion_spec("nvidia"), openai_completions_api)
+}
+
+/// Port of `togetherProvider`.
+pub fn together_provider() -> Arc<dyn Provider> {
+    uniform_provider(uniform_completion_spec("together"), openai_completions_api)
+}
+
+/// Port of `xiaomiProvider`.
+pub fn xiaomi_provider() -> Arc<dyn Provider> {
+    uniform_provider(uniform_completion_spec("xiaomi"), openai_completions_api)
+}
+
+/// Port of `xiaomiTokenPlanAmsProvider`.
+pub fn xiaomi_token_plan_ams_provider() -> Arc<dyn Provider> {
+    uniform_provider(
+        uniform_completion_spec("xiaomi-token-plan-ams"),
+        openai_completions_api,
+    )
+}
+
+/// Port of `xiaomiTokenPlanCnProvider`.
+pub fn xiaomi_token_plan_cn_provider() -> Arc<dyn Provider> {
+    uniform_provider(
+        uniform_completion_spec("xiaomi-token-plan-cn"),
+        openai_completions_api,
+    )
+}
+
+/// Port of `xiaomiTokenPlanSgpProvider`.
+pub fn xiaomi_token_plan_sgp_provider() -> Arc<dyn Provider> {
+    uniform_provider(
+        uniform_completion_spec("xiaomi-token-plan-sgp"),
+        openai_completions_api,
+    )
+}
+
+/// Port of `zaiProvider`.
+pub fn zai_provider() -> Arc<dyn Provider> {
+    uniform_provider(uniform_completion_spec("zai"), openai_completions_api)
+}
+
+/// Port of `zaiCodingCnProvider`.
+pub fn zai_coding_cn_provider() -> Arc<dyn Provider> {
+    uniform_provider(
+        uniform_completion_spec("zai-coding-cn"),
+        openai_completions_api,
+    )
+}
+
+/// Port of `qwenTokenPlanProvider`.
+pub fn qwen_token_plan_provider() -> Arc<dyn Provider> {
+    uniform_provider(
+        uniform_completion_spec("qwen-token-plan"),
+        openai_completions_api,
+    )
+}
+
+/// Port of `qwenTokenPlanCnProvider`.
+pub fn qwen_token_plan_cn_provider() -> Arc<dyn Provider> {
+    uniform_provider(
+        uniform_completion_spec("qwen-token-plan-cn"),
+        openai_completions_api,
+    )
+}
+
+/// Port of `qwenTokenPlanIndividualProvider`.
+pub fn qwen_token_plan_individual_provider() -> Arc<dyn Provider> {
+    uniform_provider(
+        uniform_completion_spec("qwen-token-plan-individual"),
+        openai_completions_api,
+    )
+}
+
+/// Port of `openaiProvider`.
+pub fn openai_provider() -> Arc<dyn Provider> {
+    let (spec, api) = uniform_other_spec("openai");
+    uniform_provider(spec, api)
+}
+
+/// Port of `azureOpenAIResponsesProvider`.
+pub fn azure_openai_responses_provider() -> Arc<dyn Provider> {
+    let (spec, api) = uniform_other_spec("azure-openai-responses");
+    uniform_provider(spec, api)
+}
+
+/// Port of `mistralProvider`.
+pub fn mistral_provider() -> Arc<dyn Provider> {
+    let (spec, api) = uniform_other_spec("mistral");
+    uniform_provider(spec, api)
+}
+
+/// Port of `minimaxProvider`.
+pub fn minimax_provider() -> Arc<dyn Provider> {
+    let (spec, api) = uniform_other_spec("minimax");
+    uniform_provider(spec, api)
+}
+
+/// Port of `minimaxCnProvider`.
+pub fn minimax_cn_provider() -> Arc<dyn Provider> {
+    let (spec, api) = uniform_other_spec("minimax-cn");
+    uniform_provider(spec, api)
+}
+
+/// Port of `vercelAIGatewayProvider`.
+pub fn vercel_ai_gateway_provider() -> Arc<dyn Provider> {
+    let (spec, api) = uniform_other_spec("vercel-ai-gateway");
+    uniform_provider(spec, api)
+}
+
+/// Port of `googleProvider`.
+pub fn google_provider() -> Arc<dyn Provider> {
+    let (spec, api) = uniform_other_spec("google");
+    uniform_provider(spec, api)
+}
+
 /// Builds an api-keyed map for `ProviderApi::ByApi`.
 fn by_api(entries: &[(&str, Arc<dyn ProviderStreams>)]) -> ProviderApi {
     ProviderApi::ByApi(

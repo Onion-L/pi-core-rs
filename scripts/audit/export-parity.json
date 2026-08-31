@@ -1484,11 +1484,11 @@
         ]
       },
       "registerBuiltInApiProviders": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "compat.ts"
         ],
-        "reason": "The compat registry (register_api_provider/get_api_provider) is public, but the built-in registration entry point is still private."
+        "rust": "register_built_in_api_providers"
       },
       "resetApiProviders": {
         "status": "mapped",
@@ -1579,32 +1579,32 @@
         "rust": "image_models_for_provider"
       },
       "ImagesApiFunction": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "images-api-registry.ts"
         ],
-        "reason": "Images api registry not public yet; dispatch is a static match in images.rs."
+        "rust": "ImagesApiFunction"
       },
       "ImagesApiProvider": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "images-api-registry.ts"
         ],
-        "reason": "Images api registry not public yet; dispatch is a static match in images.rs."
+        "rust": "ImagesApiProvider"
       },
       "registerImagesApiProvider": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "images-api-registry.ts"
         ],
-        "reason": "Images api registry not public yet; dispatch is a static match in images.rs."
+        "rust": "register_images_api_provider"
       },
       "getImagesApiProvider": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "images-api-registry.ts"
         ],
-        "reason": "Images api registry not public yet; dispatch is a static match in images.rs."
+        "rust": "get_images_api_provider"
       },
       "ImagesProvider": {
         "status": "mapped",
@@ -2094,11 +2094,11 @@
         "reason": "Per-provider catalog constant; Rust exposes the aggregate generated catalog (models_generated::models, models_for_provider, get_builtin_models)."
       },
       "antLingProvider": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "providers/ant-ling.ts"
         ],
-        "reason": "Construction currently only via the builtin_providers() aggregate; the public per-provider factory lands with the provider-factory commit."
+        "rust": "ant_ling_provider"
       },
       "ANTHROPIC_MODELS": {
         "status": "exception",
@@ -2122,11 +2122,11 @@
         "reason": "Per-provider catalog constant; Rust exposes the aggregate generated catalog (models_generated::models, models_for_provider, get_builtin_models)."
       },
       "azureOpenAIResponsesProvider": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "providers/azure-openai-responses.ts"
         ],
-        "reason": "Construction currently only via the builtin_providers() aggregate; the public per-provider factory lands with the provider-factory commit."
+        "rust": "azure_openai_responses_provider"
       },
       "BASETEN_MODELS": {
         "status": "exception",
@@ -2136,11 +2136,11 @@
         "reason": "Per-provider catalog constant; Rust exposes the aggregate generated catalog (models_generated::models, models_for_provider, get_builtin_models)."
       },
       "basetenProvider": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "providers/baseten.ts"
         ],
-        "reason": "Construction currently only via the builtin_providers() aggregate; the public per-provider factory lands with the provider-factory commit."
+        "rust": "baseten_provider"
       },
       "CEREBRAS_MODELS": {
         "status": "exception",
@@ -2150,11 +2150,11 @@
         "reason": "Per-provider catalog constant; Rust exposes the aggregate generated catalog (models_generated::models, models_for_provider, get_builtin_models)."
       },
       "cerebrasProvider": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "providers/cerebras.ts"
         ],
-        "reason": "Construction currently only via the builtin_providers() aggregate; the public per-provider factory lands with the provider-factory commit."
+        "rust": "cerebras_provider"
       },
       "CLOUDFLARE_AI_GATEWAY_MODELS": {
         "status": "exception",
@@ -2220,11 +2220,11 @@
         "reason": "Per-provider catalog constant; Rust exposes the aggregate generated catalog (models_generated::models, models_for_provider, get_builtin_models)."
       },
       "deepseekProvider": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "providers/deepseek.ts"
         ],
-        "reason": "Construction currently only via the builtin_providers() aggregate; the public per-provider factory lands with the provider-factory commit."
+        "rust": "deepseek_provider"
       },
       "FauxModelDefinition": {
         "status": "mapped",
@@ -2374,11 +2374,11 @@
         "reason": "Per-provider catalog constant; Rust exposes the aggregate generated catalog (models_generated::models, models_for_provider, get_builtin_models)."
       },
       "googleProvider": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "providers/google.ts"
         ],
-        "reason": "Construction currently only via the builtin_providers() aggregate; the public per-provider factory lands with the provider-factory commit."
+        "rust": "google_provider"
       },
       "GROQ_MODELS": {
         "status": "exception",
@@ -2388,11 +2388,11 @@
         "reason": "Per-provider catalog constant; Rust exposes the aggregate generated catalog (models_generated::models, models_for_provider, get_builtin_models)."
       },
       "groqProvider": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "providers/groq.ts"
         ],
-        "reason": "Construction currently only via the builtin_providers() aggregate; the public per-provider factory lands with the provider-factory commit."
+        "rust": "groq_provider"
       },
       "HUGGINGFACE_MODELS": {
         "status": "exception",
@@ -2402,11 +2402,11 @@
         "reason": "Per-provider catalog constant; Rust exposes the aggregate generated catalog (models_generated::models, models_for_provider, get_builtin_models)."
       },
       "huggingfaceProvider": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "providers/huggingface.ts"
         ],
-        "reason": "Construction currently only via the builtin_providers() aggregate; the public per-provider factory lands with the provider-factory commit."
+        "rust": "huggingface_provider"
       },
       "generateImagesOpenRouter": {
         "status": "mapped",
@@ -2417,11 +2417,11 @@
         "note": "Statically linked (ai::api::openrouter_images); the TS lazy-load error path is unreachable in Rust."
       },
       "registerBuiltInImagesApiProviders": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "providers/images/register-builtins.ts"
         ],
-        "reason": "Built-in images api registration is a static match today; the public registration entry point is pending."
+        "rust": "register_built_in_images_api_providers"
       },
       "KIMI_CODING_MODELS": {
         "status": "exception",
@@ -2445,11 +2445,11 @@
         "reason": "Per-provider catalog constant; Rust exposes the aggregate generated catalog (models_generated::models, models_for_provider, get_builtin_models)."
       },
       "minimaxCnProvider": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "providers/minimax-cn.ts"
         ],
-        "reason": "Construction currently only via the builtin_providers() aggregate; the public per-provider factory lands with the provider-factory commit."
+        "rust": "minimax_cn_provider"
       },
       "MINIMAX_MODELS": {
         "status": "exception",
@@ -2459,11 +2459,11 @@
         "reason": "Per-provider catalog constant; Rust exposes the aggregate generated catalog (models_generated::models, models_for_provider, get_builtin_models)."
       },
       "minimaxProvider": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "providers/minimax.ts"
         ],
-        "reason": "Construction currently only via the builtin_providers() aggregate; the public per-provider factory lands with the provider-factory commit."
+        "rust": "minimax_provider"
       },
       "MISTRAL_MODELS": {
         "status": "exception",
@@ -2473,11 +2473,11 @@
         "reason": "Per-provider catalog constant; Rust exposes the aggregate generated catalog (models_generated::models, models_for_provider, get_builtin_models)."
       },
       "mistralProvider": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "providers/mistral.ts"
         ],
-        "reason": "Construction currently only via the builtin_providers() aggregate; the public per-provider factory lands with the provider-factory commit."
+        "rust": "mistral_provider"
       },
       "MOONSHOTAI_CN_MODELS": {
         "status": "exception",
@@ -2487,11 +2487,11 @@
         "reason": "Per-provider catalog constant; Rust exposes the aggregate generated catalog (models_generated::models, models_for_provider, get_builtin_models)."
       },
       "moonshotaiCnProvider": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "providers/moonshotai-cn.ts"
         ],
-        "reason": "Construction currently only via the builtin_providers() aggregate; the public per-provider factory lands with the provider-factory commit."
+        "rust": "moonshotai_cn_provider"
       },
       "MOONSHOTAI_MODELS": {
         "status": "exception",
@@ -2501,11 +2501,11 @@
         "reason": "Per-provider catalog constant; Rust exposes the aggregate generated catalog (models_generated::models, models_for_provider, get_builtin_models)."
       },
       "moonshotaiProvider": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "providers/moonshotai.ts"
         ],
-        "reason": "Construction currently only via the builtin_providers() aggregate; the public per-provider factory lands with the provider-factory commit."
+        "rust": "moonshotai_provider"
       },
       "NVIDIA_MODELS": {
         "status": "exception",
@@ -2515,11 +2515,11 @@
         "reason": "Per-provider catalog constant; Rust exposes the aggregate generated catalog (models_generated::models, models_for_provider, get_builtin_models)."
       },
       "nvidiaProvider": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "providers/nvidia.ts"
         ],
-        "reason": "Construction currently only via the builtin_providers() aggregate; the public per-provider factory lands with the provider-factory commit."
+        "rust": "nvidia_provider"
       },
       "OPENAI_CODEX_MODELS": {
         "status": "exception",
@@ -2543,11 +2543,11 @@
         "reason": "Per-provider catalog constant; Rust exposes the aggregate generated catalog (models_generated::models, models_for_provider, get_builtin_models)."
       },
       "openaiProvider": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "providers/openai.ts"
         ],
-        "reason": "Construction currently only via the builtin_providers() aggregate; the public per-provider factory lands with the provider-factory commit."
+        "rust": "openai_provider"
       },
       "OPENCODE_GO_MODELS": {
         "status": "exception",
@@ -2606,11 +2606,11 @@
         "reason": "Per-provider catalog constant; Rust exposes the aggregate generated catalog (models_generated::models, models_for_provider, get_builtin_models)."
       },
       "qwenTokenPlanCnProvider": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "providers/qwen-token-plan-cn.ts"
         ],
-        "reason": "Construction currently only via the builtin_providers() aggregate; the public per-provider factory lands with the provider-factory commit."
+        "rust": "qwen_token_plan_cn_provider"
       },
       "QWEN_TOKEN_PLAN_INDIVIDUAL_MODELS": {
         "status": "exception",
@@ -2620,11 +2620,11 @@
         "reason": "Per-provider catalog constant; Rust exposes the aggregate generated catalog (models_generated::models, models_for_provider, get_builtin_models)."
       },
       "qwenTokenPlanIndividualProvider": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "providers/qwen-token-plan-individual.ts"
         ],
-        "reason": "Construction currently only via the builtin_providers() aggregate; the public per-provider factory lands with the provider-factory commit."
+        "rust": "qwen_token_plan_individual_provider"
       },
       "QWEN_TOKEN_PLAN_MODELS": {
         "status": "exception",
@@ -2634,11 +2634,11 @@
         "reason": "Per-provider catalog constant; Rust exposes the aggregate generated catalog (models_generated::models, models_for_provider, get_builtin_models)."
       },
       "qwenTokenPlanProvider": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "providers/qwen-token-plan.ts"
         ],
-        "reason": "Construction currently only via the builtin_providers() aggregate; the public per-provider factory lands with the provider-factory commit."
+        "rust": "qwen_token_plan_provider"
       },
       "DEFAULT_RADIUS_GATEWAY": {
         "status": "mapped",
@@ -2719,11 +2719,11 @@
         "reason": "Per-provider catalog constant; Rust exposes the aggregate generated catalog (models_generated::models, models_for_provider, get_builtin_models)."
       },
       "togetherProvider": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "providers/together.ts"
         ],
-        "reason": "Construction currently only via the builtin_providers() aggregate; the public per-provider factory lands with the provider-factory commit."
+        "rust": "together_provider"
       },
       "VERCEL_AI_GATEWAY_MODELS": {
         "status": "exception",
@@ -2733,11 +2733,11 @@
         "reason": "Per-provider catalog constant; Rust exposes the aggregate generated catalog (models_generated::models, models_for_provider, get_builtin_models)."
       },
       "vercelAIGatewayProvider": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "providers/vercel-ai-gateway.ts"
         ],
-        "reason": "Construction currently only via the builtin_providers() aggregate; the public per-provider factory lands with the provider-factory commit."
+        "rust": "vercel_ai_gateway_provider"
       },
       "XAI_MODELS": {
         "status": "exception",
@@ -2761,11 +2761,11 @@
         "reason": "Per-provider catalog constant; Rust exposes the aggregate generated catalog (models_generated::models, models_for_provider, get_builtin_models)."
       },
       "xiaomiTokenPlanAmsProvider": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "providers/xiaomi-token-plan-ams.ts"
         ],
-        "reason": "Construction currently only via the builtin_providers() aggregate; the public per-provider factory lands with the provider-factory commit."
+        "rust": "xiaomi_token_plan_ams_provider"
       },
       "XIAOMI_TOKEN_PLAN_CN_MODELS": {
         "status": "exception",
@@ -2775,11 +2775,11 @@
         "reason": "Per-provider catalog constant; Rust exposes the aggregate generated catalog (models_generated::models, models_for_provider, get_builtin_models)."
       },
       "xiaomiTokenPlanCnProvider": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "providers/xiaomi-token-plan-cn.ts"
         ],
-        "reason": "Construction currently only via the builtin_providers() aggregate; the public per-provider factory lands with the provider-factory commit."
+        "rust": "xiaomi_token_plan_cn_provider"
       },
       "XIAOMI_TOKEN_PLAN_SGP_MODELS": {
         "status": "exception",
@@ -2789,11 +2789,11 @@
         "reason": "Per-provider catalog constant; Rust exposes the aggregate generated catalog (models_generated::models, models_for_provider, get_builtin_models)."
       },
       "xiaomiTokenPlanSgpProvider": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "providers/xiaomi-token-plan-sgp.ts"
         ],
-        "reason": "Construction currently only via the builtin_providers() aggregate; the public per-provider factory lands with the provider-factory commit."
+        "rust": "xiaomi_token_plan_sgp_provider"
       },
       "XIAOMI_MODELS": {
         "status": "exception",
@@ -2803,11 +2803,11 @@
         "reason": "Per-provider catalog constant; Rust exposes the aggregate generated catalog (models_generated::models, models_for_provider, get_builtin_models)."
       },
       "xiaomiProvider": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "providers/xiaomi.ts"
         ],
-        "reason": "Construction currently only via the builtin_providers() aggregate; the public per-provider factory lands with the provider-factory commit."
+        "rust": "xiaomi_provider"
       },
       "ZAI_CODING_CN_MODELS": {
         "status": "exception",
@@ -2817,11 +2817,11 @@
         "reason": "Per-provider catalog constant; Rust exposes the aggregate generated catalog (models_generated::models, models_for_provider, get_builtin_models)."
       },
       "zaiCodingCnProvider": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "providers/zai-coding-cn.ts"
         ],
-        "reason": "Construction currently only via the builtin_providers() aggregate; the public per-provider factory lands with the provider-factory commit."
+        "rust": "zai_coding_cn_provider"
       },
       "ZAI_MODELS": {
         "status": "exception",
@@ -2831,11 +2831,11 @@
         "reason": "Per-provider catalog constant; Rust exposes the aggregate generated catalog (models_generated::models, models_for_provider, get_builtin_models)."
       },
       "zaiProvider": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "providers/zai.ts"
         ],
-        "reason": "Construction currently only via the builtin_providers() aggregate; the public per-provider factory lands with the provider-factory commit."
+        "rust": "zai_provider"
       },
       "SessionResourceCleanup": {
         "status": "mapped",
@@ -3114,18 +3114,20 @@
         ]
       },
       "StreamFunction": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "types.ts"
         ],
-        "reason": "Registry stream-function type pending the public API-provider registry commit."
+        "rust": "ApiStreamFn",
+        "note": "The api-registry stream fn type."
       },
       "ImagesFunction": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "types.ts"
         ],
-        "reason": "Images registry function type pending the public images registry commit."
+        "rust": "ImagesApiFunction",
+        "note": "The images-registry fn type."
       },
       "TextSignatureV1": {
         "status": "partial",
