@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 
 use crate::ai::types::{
     AssistantContent, AssistantMessage, AssistantMessageEvent, Context, DoneReason, ErrorReason,
-    Model, SimpleStreamOptions, StopReason, StreamOptions, ThinkingLevel, ToolCall,
+    Model, SimpleStreamOptions, StopReason, StreamOptions, ThinkingLevel, ToolCall, Usage,
 };
 use crate::ai::utils::diagnostics::append_assistant_message_diagnostic;
 use crate::ai::utils::event_stream::{
@@ -34,7 +34,7 @@ pub struct PiMessagesOptions {
 }
 
 /// Port of `PiMessagesRewriteImpact`.
-#[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PiMessagesRewriteImpact {
     pub policy_id: String,
@@ -43,6 +43,123 @@ pub struct PiMessagesRewriteImpact {
     pub token_count_change: i64,
     pub message_count_change: i64,
     pub system_prompt_changed: bool,
+}
+
+/// Terminal reason accepted by a successful pi-messages event.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PiMessagesDoneReason {
+    Stop,
+    Length,
+    ToolUse,
+}
+
+/// Terminal reason accepted by an error pi-messages event.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PiMessagesErrorReason {
+    Aborted,
+    Error,
+}
+
+/// Serialized assistant-message event sent by a pi-messages backend.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum PiMessagesEvent {
+    Start,
+    TextStart {
+        #[serde(rename = "contentIndex")]
+        content_index: usize,
+    },
+    TextDelta {
+        #[serde(rename = "contentIndex")]
+        content_index: usize,
+        delta: String,
+    },
+    TextEnd {
+        #[serde(rename = "contentIndex")]
+        content_index: usize,
+        content: String,
+        #[serde(
+            rename = "contentSignature",
+            skip_serializing_if = "Option::is_none",
+            default
+        )]
+        content_signature: Option<String>,
+    },
+    ThinkingStart {
+        #[serde(rename = "contentIndex")]
+        content_index: usize,
+    },
+    ThinkingDelta {
+        #[serde(rename = "contentIndex")]
+        content_index: usize,
+        delta: String,
+    },
+    ThinkingEnd {
+        #[serde(rename = "contentIndex")]
+        content_index: usize,
+        content: String,
+        #[serde(
+            rename = "contentSignature",
+            skip_serializing_if = "Option::is_none",
+            default
+        )]
+        content_signature: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        redacted: Option<bool>,
+    },
+    #[serde(rename = "toolcall_start")]
+    ToolcallStart {
+        #[serde(rename = "contentIndex")]
+        content_index: usize,
+        id: String,
+        #[serde(rename = "toolName")]
+        tool_name: String,
+    },
+    #[serde(rename = "toolcall_delta")]
+    ToolcallDelta {
+        #[serde(rename = "contentIndex")]
+        content_index: usize,
+        delta: String,
+    },
+    #[serde(rename = "toolcall_end")]
+    ToolcallEnd {
+        #[serde(rename = "contentIndex")]
+        content_index: usize,
+        #[serde(rename = "toolCall")]
+        tool_call: ToolCall,
+    },
+    Done {
+        reason: PiMessagesDoneReason,
+        usage: Usage,
+        #[serde(
+            rename = "responseId",
+            skip_serializing_if = "Option::is_none",
+            default
+        )]
+        response_id: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        rewrite: Option<PiMessagesRewriteImpact>,
+    },
+    Error {
+        reason: PiMessagesErrorReason,
+        usage: Usage,
+        #[serde(
+            rename = "errorMessage",
+            skip_serializing_if = "Option::is_none",
+            default
+        )]
+        error_message: Option<String>,
+        #[serde(
+            rename = "responseId",
+            skip_serializing_if = "Option::is_none",
+            default
+        )]
+        response_id: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        rewrite: Option<PiMessagesRewriteImpact>,
+    },
 }
 
 /// Port of `resolveCacheRetention`: backend defaults apply when unset; only

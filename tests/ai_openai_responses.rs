@@ -33,13 +33,27 @@ use pi_core::ai::types::{
     AssistantContent, AssistantMessage, AssistantMessageEvent, BlockContent, CacheRetention,
     ConstrainedSamplingConfig, ConstrainedSamplingStrict, Context, Message, Model, ModelCompat,
     ModelInput, ProviderEnv, ProviderRequestOptions, RoleAssistant, RoleToolResult, RoleUser,
-    SessionAffinityFormat, StopReason, StreamOptions, TextContent, ThinkingContent, Tool, ToolCall,
-    ToolConstrainedSampling, ToolResultMessage, Usage, UserContent, UserMessage,
+    SessionAffinityFormat, StopReason, StreamOptions, TextContent, TextSignaturePhase,
+    TextSignatureV1, ThinkingContent, Tool, ToolCall, ToolConstrainedSampling, ToolResultMessage,
+    Usage, UserContent, UserMessage,
 };
 use pi_core::ai::utils::event_stream::{collect_events, create_assistant_message_event_stream};
 use pi_core::ai::utils::http::{HttpBody, HttpFetch, HttpFetchError, HttpRequest, HttpResponse};
 use pi_core::ai::utils::text::short_hash;
 use serde_json::{Value, json};
+
+#[test]
+fn text_signature_v1_matches_the_public_json_shape() {
+    let signature = TextSignatureV1::new("msg_123", Some(TextSignaturePhase::FinalAnswer));
+    assert_eq!(
+        serde_json::to_string(&signature).unwrap(),
+        r#"{"v":1,"id":"msg_123","phase":"final_answer"}"#
+    );
+    assert_eq!(
+        serde_json::from_str::<TextSignatureV1>(r#"{"v":1,"id":"msg_123"}"#).unwrap(),
+        TextSignatureV1::new("msg_123", None)
+    );
+}
 
 fn builtin(provider: &str, id: &str) -> Model {
     pi_core::ai::providers::builtin::get_builtin_model(provider, id)

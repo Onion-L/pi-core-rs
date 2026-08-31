@@ -17,18 +17,52 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
-use pi_core::ai::api::pi_messages::{PiMessagesOptions, stream, stream_simple};
+use pi_core::ai::api::pi_messages::{
+    PiMessagesDoneReason, PiMessagesEvent, PiMessagesOptions, stream, stream_simple,
+};
 use pi_core::ai::compat;
 use pi_core::ai::types::{
     AssistantContent, AssistantMessage, AssistantMessageEvent, Context, Message, Model, ModelCost,
     ModelCostRates, ModelInput, OnResponseCallback, ProviderHeaders, ProviderRequestOptions,
     ProviderResponse, RoleUser, SimpleStreamOptions, StopReason, StreamOptions, TextContent,
-    ToolCall, UserContent, UserMessage,
+    ToolCall, Usage, UserContent, UserMessage,
 };
 use pi_core::ai::utils::http::{
     HttpBody, HttpFetch, HttpFetchError, HttpMethod, HttpRequest, HttpResponse,
 };
 use serde_json::{Value, json};
+
+#[test]
+fn pi_messages_event_matches_the_public_wire_shape() {
+    let event = PiMessagesEvent::TextEnd {
+        content_index: 2,
+        content: "done".to_string(),
+        content_signature: Some("signature".to_string()),
+    };
+    assert_eq!(
+        serde_json::to_value(event).unwrap(),
+        json!({
+            "type": "text_end",
+            "contentIndex": 2,
+            "content": "done",
+            "contentSignature": "signature"
+        })
+    );
+
+    let done: PiMessagesEvent = serde_json::from_value(json!({
+        "type": "done",
+        "reason": "toolUse",
+        "usage": Usage::default()
+    }))
+    .unwrap();
+    assert!(matches!(
+        done,
+        PiMessagesEvent::Done {
+            reason: PiMessagesDoneReason::ToolUse,
+            ..
+        }
+    ));
+}
 
 /// The mock transport standing in for the TS tests' HTTP server.
 struct PiMessagesServerFetch {

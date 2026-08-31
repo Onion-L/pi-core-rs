@@ -223,6 +223,17 @@ async fn creates_an_agent_instance_with_default_state() {
     assert!(agent.streaming_message().is_none());
     assert!(agent.pending_tool_calls().is_empty());
     assert!(agent.error_message().is_none());
+
+    let state = agent.state();
+    assert_eq!(state.system_prompt, "");
+    assert_eq!(state.model.id, "unknown");
+    assert_eq!(state.thinking_level, ThinkingLevel::Off);
+    assert!(state.tools.is_empty());
+    assert!(state.messages.is_empty());
+    assert!(!state.is_streaming);
+    assert!(state.streaming_message.is_none());
+    assert!(state.pending_tool_calls.is_empty());
+    assert!(state.error_message.is_none());
 }
 
 #[tokio::test]

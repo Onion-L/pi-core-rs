@@ -88,7 +88,7 @@ upstream package).
 | `src/api/openrouter-images.lazy.ts` | `src/ai/providers/builtin.rs` | done (direct dispatch adapter) |
 | `src/api/openrouter-images.ts` | `src/ai/api/openrouter_images.rs` | done (request/response handling, retry, and usage parsing ported; the abort signal rides on the request like the OpenAI-SDK signal wiring, and the transport rejects an already-aborted signal) |
 | `src/api/pi-messages.lazy.ts` | `src/ai/providers/apis.rs` | done |
-| `src/api/pi-messages.ts` | `src/ai/api/pi_messages.rs` | partial (`PiMessagesResponseError` shape is the public `StreamFailure`, threaded into the error event; typed `PiMessagesEvent` union remains partial) |
+| `src/api/pi-messages.ts` | `src/ai/api/pi_messages.rs` | done (`PiMessagesResponseError` shape is the public `StreamFailure`, threaded into the error event) |
 | `src/api/simple-options.ts` | `src/ai/api/simple_options.rs` | done |
 | `src/api/transform-messages.ts` | `src/ai/api/transform_messages.rs` | done |
 | `src/auth/context.ts` | `src/ai/auth/context.rs` | done |
@@ -212,7 +212,7 @@ upstream package).
 | `src/providers/zai.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
 | `src/providers/zai.ts` | `src/ai/providers/builtin.rs` | done |
 | `src/session-resources.ts` | `src/ai/session_resources.rs` | done |
-| `src/types.ts` | `src/ai/types.rs` | partial (`TextSignatureV1` encoding exists in `openai_responses_shared.rs`, but the named public type is not exposed) |
+| `src/types.ts` | `src/ai/types.rs` | done |
 | `src/utils/abort-signals.ts` | `src/ai/utils/abort.rs` | done |
 | `src/utils/abort.ts` | `src/ai/utils/abort.rs` | done |
 | `src/utils/deferred-tools.ts` | `src/ai/utils/deferred_tools.rs` | done |
@@ -476,7 +476,7 @@ Closed implementable gaps:
 | `src/search/index.ts` | `src/agent/search/mod.rs` | done |
 | `src/search/scanning.ts` | `src/agent/search/mod.rs` | done |
 | `src/stream-fn.ts` | `src/agent/stream_fn.rs` | done |
-| `src/types.ts` | `src/agent/types.rs` (+ `src/ai/types.rs` for the shared LLM types) | partial (`AgentState` remains encapsulated behind public accessors) |
+| `src/types.ts` | `src/agent/types.rs` (+ `src/ai/types.rs` for the shared LLM types) | done |
 
 ### Documented deviations (agent core)
 

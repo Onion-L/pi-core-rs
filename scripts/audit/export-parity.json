@@ -892,12 +892,12 @@
         ]
       },
       "PiMessagesEvent": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "api/pi-messages.ts",
           "index.ts"
         ],
-        "reason": "pi-messages event type pending the public facade in api/pi_messages.rs."
+        "rust": "PiMessagesEvent"
       },
       "PiMessagesResponseError": {
         "status": "mapped",
@@ -3138,11 +3138,11 @@
         "note": "The images-registry fn type."
       },
       "TextSignatureV1": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "types.ts"
         ],
-        "reason": "Text-signature encoding lives in api/openai_responses_shared.rs; the V1 shape is not yet a named public type."
+        "rust": "TextSignatureV1"
       },
       "TextContent": {
         "status": "mapped",
@@ -6684,12 +6684,11 @@
         ]
       },
       "AgentState": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "types.ts"
         ],
-        "rust": "AgentState",
-        "reason": "Agent state is encapsulated (the internal state struct is private); the public surface is the accessor methods (is_streaming, model, messages, session_id, ...)."
+        "rust": "AgentState"
       },
       "AgentToolResult": {
         "status": "mapped",

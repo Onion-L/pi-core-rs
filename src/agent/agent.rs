@@ -16,7 +16,7 @@ use crate::ai::types::{
 use super::agent_loop::{AgentEventSink, run_agent_loop, run_agent_loop_continue};
 use super::types::{
     AfterToolCallFn, AgentContext, AgentEvent, AgentLoopConfig, AgentLoopTurnUpdate, AgentMessage,
-    AgentTool, BeforeToolCallFn, ConvertToLlmFn, GetApiKeyFn, GetMessagesFn,
+    AgentState, AgentTool, BeforeToolCallFn, ConvertToLlmFn, GetApiKeyFn, GetMessagesFn,
     PrepareNextTurnContext, PrepareNextTurnFn, QueueMode, ShouldStopAfterTurnContext,
     ShouldStopAfterTurnFn, StreamFn, ThinkingLevel, ToolExecutionMode, TransformContextFn,
     now_millis,
@@ -366,6 +366,22 @@ impl Agent {
     // -----------------------------------------------------------------------
     // State accessors (the `AgentState` surface)
     // -----------------------------------------------------------------------
+
+    /// Captures all public state fields under one lock.
+    pub fn state(&self) -> AgentState {
+        let state = lock(&self.inner.state);
+        AgentState {
+            system_prompt: state.system_prompt.clone(),
+            model: state.model.clone(),
+            thinking_level: state.thinking_level,
+            tools: state.tools.clone(),
+            messages: state.messages.clone(),
+            is_streaming: state.is_streaming,
+            streaming_message: state.streaming_message.clone(),
+            pending_tool_calls: state.pending_tool_calls.clone(),
+            error_message: state.error_message.clone(),
+        }
+    }
 
     /// Current system prompt.
     pub fn system_prompt(&self) -> String {

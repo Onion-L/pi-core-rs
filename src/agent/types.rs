@@ -1,5 +1,6 @@
 //! Port of `pi-core/agent/src/types.ts`.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use futures::future::BoxFuture;
@@ -84,6 +85,20 @@ impl ThinkingLevel {
             ThinkingLevel::Max => Some(ProviderThinkingLevel::Max),
         }
     }
+}
+
+/// Read-only snapshot of the public agent state.
+#[derive(Clone)]
+pub struct AgentState {
+    pub system_prompt: String,
+    pub model: Model,
+    pub thinking_level: ThinkingLevel,
+    pub tools: Vec<AgentTool>,
+    pub messages: Vec<AgentMessage>,
+    pub is_streaming: bool,
+    pub streaming_message: Option<AgentMessage>,
+    pub pending_tool_calls: HashSet<String>,
+    pub error_message: Option<String>,
 }
 
 /// A single tool call content block emitted by an assistant message.

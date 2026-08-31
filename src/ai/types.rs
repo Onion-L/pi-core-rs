@@ -442,6 +442,33 @@ pub struct ThinkingContent {
     pub redacted: Option<bool>,
 }
 
+/// Phase metadata stored in an OpenAI Responses text signature.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TextSignaturePhase {
+    Commentary,
+    FinalAnswer,
+}
+
+/// Port of `TextSignatureV1`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TextSignatureV1 {
+    pub v: u8,
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub phase: Option<TextSignaturePhase>,
+}
+
+impl TextSignatureV1 {
+    pub fn new(id: impl Into<String>, phase: Option<TextSignaturePhase>) -> Self {
+        Self {
+            v: 1,
+            id: id.into(),
+            phase,
+        }
+    }
+}
+
 /// Port of `ImageContent`; `data` is base64-encoded image data.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
