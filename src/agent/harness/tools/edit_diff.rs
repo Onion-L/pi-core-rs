@@ -80,10 +80,10 @@ struct LineSpan {
 }
 
 #[derive(Clone, Debug)]
-struct TextReplacement {
-    match_index: usize,
-    match_length: usize,
-    new_text: String,
+pub struct TextReplacement {
+    pub match_index: usize,
+    pub match_length: usize,
+    pub new_text: String,
 }
 
 fn get_line_spans(content: &str) -> Vec<LineSpan> {
@@ -138,7 +138,7 @@ fn apply_replacements(content: &str, replacements: &[TextReplacement], offset: u
 }
 
 /// Port of `applyReplacementsPreservingUnchangedLines`.
-fn apply_replacements_preserving_unchanged_lines(
+pub fn apply_replacements_preserving_unchanged_lines(
     original_content: &str,
     base_content: &str,
     replacements: &[TextReplacement],
@@ -193,7 +193,8 @@ pub struct FuzzyMatchResult {
 }
 
 /// Port of `Edit`.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Edit {
     pub old_text: String,
     pub new_text: String,

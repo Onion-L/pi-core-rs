@@ -6,6 +6,28 @@ use tokio_util::sync::CancellationToken;
 use crate::agent::types::AgentMessage;
 use crate::ai::types::Usage;
 
+/// Port of `SessionStopReason` (`StopReason` excluding `pending`, plus
+/// `deferred`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SessionStopReason {
+    Stop,
+    Length,
+    ToolUse,
+    Error,
+    Aborted,
+    Deferred,
+}
+
+/// Port of `CompactionReason`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CompactionReason {
+    Manual,
+    Threshold,
+    Overflow,
+}
+
 // ---------------------------------------------------------------------------
 // Entries
 // ---------------------------------------------------------------------------
@@ -129,6 +151,19 @@ pub enum Entry {
 }
 
 impl Entry {
+    /// Construct a provisioned `MessageEntry`. Storage fills the parent,
+    /// sequence, and timestamp fields when it accepts the entry.
+    pub fn message(id: impl Into<String>, message: AgentMessage) -> Self {
+        Self::Message {
+            id: id.into(),
+            message,
+            terminate: None,
+            parent_id: None,
+            seq: 0,
+            timestamp: 0,
+        }
+    }
+
     /// The entry discriminator.
     pub fn entry_type(&self) -> EntryType {
         match self {
@@ -307,6 +342,16 @@ impl Entry {
         assign(self, parent_id, seq, timestamp)
     }
 }
+
+pub type EntryBase = Entry;
+pub type MessageEntry = Entry;
+pub type ModelChangeEntry = Entry;
+pub type ThinkingLevelEntry = Entry;
+pub type ActiveToolsEntry = Entry;
+pub type CompactionEntry = Entry;
+pub type BranchSummaryEntry = Entry;
+pub type CustomEntry = Entry;
+pub type ProvisionedEntry = Entry;
 
 // ---------------------------------------------------------------------------
 // Lane records
@@ -694,6 +739,18 @@ impl LaneRecord {
         }
     }
 }
+
+pub type RecordBase = LaneRecord;
+pub type OperationStartedRecord = LaneRecord;
+pub type AbortRequestedRecord = LaneRecord;
+pub type OperationFinishedRecord = LaneRecord;
+pub type StepAttemptRecord = LaneRecord;
+pub type ToolStartedRecord = LaneRecord;
+pub type QueueEnqueuedRecord = LaneRecord;
+pub type QueueCancelledRecord = LaneRecord;
+pub type WriteDeferredRecord = LaneRecord;
+pub type UsageRecord = LaneRecord;
+pub type NewRecord = LaneRecord;
 
 fn cause_run_id(cause: &UsageCause) -> Option<&str> {
     match cause {

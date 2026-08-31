@@ -13,6 +13,21 @@ use super::image::{detect_supported_image_mime_type, encode_base64};
 use super::path_utils::resolve_read_tool_path;
 use super::tool_context::as_execution_tool_context;
 
+/// Port of `ReadToolInput`.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ReadToolInput {
+    pub path: String,
+    pub offset: Option<f64>,
+    pub limit: Option<f64>,
+}
+
+/// Port of `ReadToolDetails`.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ReadToolDetails {
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub truncation: Option<crate::agent::harness::utils::truncate::TruncationResult>,
+}
+
 pub fn read_schema() -> serde_json::Value {
     serde_json::json!({
         "type": "object",

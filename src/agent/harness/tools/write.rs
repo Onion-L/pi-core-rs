@@ -9,6 +9,13 @@ use super::file_mutation_queue::with_file_mutation_queue;
 use super::path_utils::resolve_tool_path;
 use super::tool_context::as_execution_tool_context;
 
+/// Port of `WriteToolInput`.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WriteToolInput {
+    pub path: String,
+    pub content: String,
+}
+
 pub fn write_schema() -> serde_json::Value {
     serde_json::json!({
         "type": "object",

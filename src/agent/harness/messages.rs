@@ -15,6 +15,23 @@ pub const BRANCH_SUMMARY_PREFIX: &str =
     "The following is a summary of a branch that this conversation came back from:\n\n<summary>\n";
 pub const BRANCH_SUMMARY_SUFFIX: &str = "</summary>";
 
+/// Port of `BashExecutionMessage`.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BashExecutionMessage {
+    pub role: String,
+    pub command: String,
+    pub output: String,
+    pub exit_code: Option<i32>,
+    pub cancelled: bool,
+    pub truncated: bool,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub full_output_path: Option<String>,
+    pub timestamp: i64,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub exclude_from_context: Option<bool>,
+}
+
 /// Builds a harness custom message payload (`{ role, ...fields }`) as raw
 /// JSON plus its role discriminator.
 pub fn custom_message(role: &str, fields: serde_json::Value) -> AgentMessage {

@@ -13,6 +13,23 @@ use super::file_mutation_queue::with_file_mutation_queue;
 use super::path_utils::resolve_tool_path;
 use super::tool_context::as_execution_tool_context;
 
+/// Port of `EditToolInput`.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct EditToolInput {
+    pub path: String,
+    pub edits: Vec<super::edit_diff::Edit>,
+}
+
+/// Port of `EditToolDetails`.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditToolDetails {
+    pub diff: String,
+    pub patch: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub first_changed_line: Option<usize>,
+}
+
 pub fn edit_schema() -> serde_json::Value {
     serde_json::json!({
         "type": "object",

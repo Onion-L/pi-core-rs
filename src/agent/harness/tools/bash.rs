@@ -12,6 +12,23 @@ use crate::ai::types::{BlockContent, TextContent};
 
 use super::tool_context::as_execution_tool_context;
 
+/// Port of `BashToolInput`.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct BashToolInput {
+    pub command: String,
+    pub timeout: Option<f64>,
+}
+
+/// Port of `BashToolDetails`.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BashToolDetails {
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub truncation: Option<crate::agent::harness::utils::truncate::TruncationResult>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub full_output_path: Option<String>,
+}
+
 const MAX_TIMEOUT_SECONDS: f64 = 2_147_483_647.0 / 1000.0;
 const BASH_UPDATE_THROTTLE_MS: u64 = 100;
 

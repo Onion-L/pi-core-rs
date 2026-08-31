@@ -62,6 +62,10 @@ pub enum SessionBackendFixture {
     Jsonl(JsonlSessionFixture),
 }
 
+/// Port of `SessionBackendFixtureFactory`.
+pub type SessionBackendFixtureFactory =
+    Arc<dyn Fn() -> BoxFuture<'static, SessionBackendFixture> + Send + Sync>;
+
 /// The JSONL fixture keeps the filesystem and sessions base so each fresh
 /// fixture derives its own sessions root.
 pub struct JsonlSessionFixture {

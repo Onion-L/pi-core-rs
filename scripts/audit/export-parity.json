@@ -4562,11 +4562,11 @@
         ]
       },
       "BashExecutionMessage": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/messages.ts"
         ],
-        "reason": "Typed bash-execution message pending the tool/session compat-types commit (bash_execution_to_text exists)."
+        "rust": "BashExecutionMessage"
       },
       "CustomMessage": {
         "status": "mapped",
@@ -5060,12 +5060,12 @@
         ]
       },
       "SessionBackendFixtureFactory": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/session/testing/index.ts",
           "harness/session/testing/types.ts"
         ],
-        "reason": "Provisioned backend fixture factory pending the session compat-types commit (fresh() exists in testing)."
+        "rust": "SessionBackendFixtureFactory"
       },
       "JsonValue": {
         "status": "exception",
@@ -5076,12 +5076,11 @@
         "reason": "serde_json::Value is the Rust counterpart."
       },
       "SessionStopReason": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/session/types.ts"
         ],
-        "rust": "StopReason",
-        "reason": "Session stop-reason union pending the session compat-types commit."
+        "rust": "SessionStopReason"
       },
       "IdGenerator": {
         "status": "mapped",
@@ -5091,67 +5090,67 @@
         "rust": "id_generator"
       },
       "EntryBase": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/session/types.ts"
         ],
-        "rust": "Entry",
+        "rust": "EntryBase",
         "reason": "Session-entry/record discriminated-union member; the Rust Entry/LaneRecord enums carry the data. Public per-variant aliases and constructors land with the session-compat-types commit."
       },
       "MessageEntry": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/session/types.ts"
         ],
-        "rust": "Entry",
+        "rust": "MessageEntry",
         "reason": "Session-entry/record discriminated-union member; the Rust Entry/LaneRecord enums carry the data. Public per-variant aliases and constructors land with the session-compat-types commit."
       },
       "ModelChangeEntry": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/session/types.ts"
         ],
-        "rust": "Entry",
+        "rust": "ModelChangeEntry",
         "reason": "Session-entry/record discriminated-union member; the Rust Entry/LaneRecord enums carry the data. Public per-variant aliases and constructors land with the session-compat-types commit."
       },
       "ThinkingLevelEntry": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/session/types.ts"
         ],
-        "rust": "Entry",
+        "rust": "ThinkingLevelEntry",
         "reason": "Session-entry/record discriminated-union member; the Rust Entry/LaneRecord enums carry the data. Public per-variant aliases and constructors land with the session-compat-types commit."
       },
       "ActiveToolsEntry": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/session/types.ts"
         ],
-        "rust": "Entry",
+        "rust": "ActiveToolsEntry",
         "reason": "Session-entry/record discriminated-union member; the Rust Entry/LaneRecord enums carry the data. Public per-variant aliases and constructors land with the session-compat-types commit."
       },
       "CompactionEntry": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/session/types.ts"
         ],
-        "rust": "Entry",
+        "rust": "CompactionEntry",
         "reason": "Session-entry/record discriminated-union member; the Rust Entry/LaneRecord enums carry the data. Public per-variant aliases and constructors land with the session-compat-types commit."
       },
       "BranchSummaryEntry": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/session/types.ts"
         ],
-        "rust": "Entry",
+        "rust": "BranchSummaryEntry",
         "reason": "Session-entry/record discriminated-union member; the Rust Entry/LaneRecord enums carry the data. Public per-variant aliases and constructors land with the session-compat-types commit."
       },
       "CustomEntry": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/session/types.ts"
         ],
-        "rust": "Entry",
+        "rust": "CustomEntry",
         "reason": "Session-entry/record discriminated-union member; the Rust Entry/LaneRecord enums carry the data. Public per-variant aliases and constructors land with the session-compat-types commit."
       },
       "Entry": {
@@ -5162,98 +5161,98 @@
         ]
       },
       "ProvisionedEntry": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/session/types.ts"
         ],
-        "rust": "Entry",
+        "rust": "ProvisionedEntry",
         "reason": "Session-entry/record discriminated-union member; the Rust Entry/LaneRecord enums carry the data. Public per-variant aliases and constructors land with the session-compat-types commit."
       },
       "RecordBase": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/session/types.ts"
         ],
-        "rust": "Entry",
+        "rust": "RecordBase",
         "reason": "Session-entry/record discriminated-union member; the Rust Entry/LaneRecord enums carry the data. Public per-variant aliases and constructors land with the session-compat-types commit."
       },
       "OperationStartedRecord": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/session/types.ts"
         ],
-        "rust": "Entry",
+        "rust": "OperationStartedRecord",
         "reason": "Session-entry/record discriminated-union member; the Rust Entry/LaneRecord enums carry the data. Public per-variant aliases and constructors land with the session-compat-types commit."
       },
       "AbortRequestedRecord": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/session/types.ts"
         ],
-        "rust": "Entry",
+        "rust": "AbortRequestedRecord",
         "reason": "Session-entry/record discriminated-union member; the Rust Entry/LaneRecord enums carry the data. Public per-variant aliases and constructors land with the session-compat-types commit."
       },
       "OperationFinishedRecord": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/session/types.ts"
         ],
-        "rust": "Entry",
+        "rust": "OperationFinishedRecord",
         "reason": "Session-entry/record discriminated-union member; the Rust Entry/LaneRecord enums carry the data. Public per-variant aliases and constructors land with the session-compat-types commit."
       },
       "CompactionReason": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/session/types.ts"
         ],
-        "reason": "Compaction reason union pending the session compat-types commit."
+        "rust": "CompactionReason"
       },
       "StepAttemptRecord": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/session/types.ts"
         ],
-        "rust": "Entry",
+        "rust": "StepAttemptRecord",
         "reason": "Session-entry/record discriminated-union member; the Rust Entry/LaneRecord enums carry the data. Public per-variant aliases and constructors land with the session-compat-types commit."
       },
       "ToolStartedRecord": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/session/types.ts"
         ],
-        "rust": "Entry",
+        "rust": "ToolStartedRecord",
         "reason": "Session-entry/record discriminated-union member; the Rust Entry/LaneRecord enums carry the data. Public per-variant aliases and constructors land with the session-compat-types commit."
       },
       "QueueEnqueuedRecord": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/session/types.ts"
         ],
-        "rust": "Entry",
+        "rust": "QueueEnqueuedRecord",
         "reason": "Session-entry/record discriminated-union member; the Rust Entry/LaneRecord enums carry the data. Public per-variant aliases and constructors land with the session-compat-types commit."
       },
       "QueueCancelledRecord": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/session/types.ts"
         ],
-        "rust": "Entry",
+        "rust": "QueueCancelledRecord",
         "reason": "Session-entry/record discriminated-union member; the Rust Entry/LaneRecord enums carry the data. Public per-variant aliases and constructors land with the session-compat-types commit."
       },
       "WriteDeferredRecord": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/session/types.ts"
         ],
-        "rust": "Entry",
+        "rust": "WriteDeferredRecord",
         "reason": "Session-entry/record discriminated-union member; the Rust Entry/LaneRecord enums carry the data. Public per-variant aliases and constructors land with the session-compat-types commit."
       },
       "UsageRecord": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/session/types.ts"
         ],
-        "rust": "Entry",
+        "rust": "UsageRecord",
         "reason": "Session-entry/record discriminated-union member; the Rust Entry/LaneRecord enums carry the data. Public per-variant aliases and constructors land with the session-compat-types commit."
       },
       "LaneRecord": {
@@ -5264,11 +5263,11 @@
         ]
       },
       "NewRecord": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/session/types.ts"
         ],
-        "rust": "Entry",
+        "rust": "NewRecord",
         "reason": "Session-entry/record discriminated-union member; the Rust Entry/LaneRecord enums carry the data. Public per-variant aliases and constructors land with the session-compat-types commit."
       },
       "EntryOrder": {
@@ -5796,20 +5795,20 @@
         ]
       },
       "BashToolInput": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/tools/bash.ts",
           "harness/tools/index.ts"
         ],
-        "reason": "Tool input/details type pending the tool/session compat-types commit."
+        "rust": "BashToolInput"
       },
       "BashToolDetails": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/tools/bash.ts",
           "harness/tools/index.ts"
         ],
-        "reason": "Tool input/details type pending the tool/session compat-types commit."
+        "rust": "BashToolDetails"
       },
       "BashExecution": {
         "status": "mapped",
@@ -5872,11 +5871,11 @@
         ]
       },
       "applyReplacementsPreservingUnchangedLines": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/tools/edit-diff.ts"
         ],
-        "reason": "Edit-application helper pending public exposure (apply_edits_to_normalized_content and friends exist)."
+        "rust": "apply_replacements_preserving_unchanged_lines"
       },
       "FuzzyMatchResult": {
         "status": "mapped",
@@ -5935,20 +5934,20 @@
         ]
       },
       "EditToolInput": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/tools/edit.ts",
           "harness/tools/index.ts"
         ],
-        "reason": "Tool input/details type pending the tool/session compat-types commit."
+        "rust": "EditToolInput"
       },
       "EditToolDetails": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/tools/edit.ts",
           "harness/tools/index.ts"
         ],
-        "reason": "Tool input/details type pending the tool/session compat-types commit."
+        "rust": "EditToolDetails"
       },
       "createEditTool": {
         "status": "mapped",
@@ -6004,20 +6003,20 @@
         ]
       },
       "ReadToolDetails": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/tools/index.ts",
           "harness/tools/read.ts"
         ],
-        "reason": "Tool input/details type pending the tool/session compat-types commit."
+        "rust": "ReadToolDetails"
       },
       "ReadToolInput": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/tools/index.ts",
           "harness/tools/read.ts"
         ],
-        "reason": "Tool input/details type pending the tool/session compat-types commit."
+        "rust": "ReadToolInput"
       },
       "ReadToolOptions": {
         "status": "mapped",
@@ -6044,12 +6043,12 @@
         ]
       },
       "WriteToolInput": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "harness/tools/index.ts",
           "harness/tools/write.ts"
         ],
-        "reason": "Tool input/details type pending the tool/session compat-types commit."
+        "rust": "WriteToolInput"
       },
       "resolveToolPath": {
         "status": "mapped",
