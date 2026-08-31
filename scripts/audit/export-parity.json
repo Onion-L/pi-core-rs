@@ -568,12 +568,13 @@
         ]
       },
       "ResolvedGoogleThinkingLevel": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "api/google-shared.ts",
           "index.ts"
         ],
-        "reason": "Resolved thinking-level type pending the google-shared public facade."
+        "rust": "resolve_google_thinking_level",
+        "note": "The TS Exclude<> subset is enforced at runtime by resolve_google_thinking_level."
       },
       "resolveGoogleThinkingLevel": {
         "status": "mapped",
@@ -640,11 +641,12 @@
         ]
       },
       "mapStopReason": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "api/google-shared.ts"
         ],
-        "reason": "Stop-reason mapping exists per api module; the public SDK-style helper facade is pending."
+        "rust": "map_stop_reason_string",
+        "note": "The SDK FinishReason enum collapses to the raw string form in the raw-HTTP port; the mapping (STOP->stop, MAX_TOKENS->length, else error) is identical."
       },
       "mapStopReasonString": {
         "status": "mapped",
@@ -654,11 +656,12 @@
         ]
       },
       "retryGoogleRequest": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "api/google-shared.ts"
         ],
-        "reason": "Google request retry loop is inlined in the google api modules; the public helper facade is pending."
+        "rust": "retry_provider_request",
+        "note": "Equivalent public facade: the TS ApiError header-normalization shim is inherent because the Rust google adapters construct ProviderHttpError (headers included) before retrying."
       },
       "googleVertexApi": {
         "status": "mapped",
@@ -771,11 +774,12 @@
         ]
       },
       "ConvertCompletionsMessagesOptions": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "api/openai-completions.ts"
         ],
-        "reason": "Completions message-conversion options pending a public type (responses-side ConvertResponsesMessagesOptions exists)."
+        "rust": "GrammarToolInputProperties",
+        "note": "The single-field options object rides as the positional grammar_tool_input_properties argument of the public convert_messages."
       },
       "OPENAI_PROMPT_CACHE_KEY_MAX_LENGTH": {
         "status": "mapped",
@@ -896,11 +900,12 @@
         "reason": "pi-messages event type pending the public facade in api/pi_messages.rs."
       },
       "PiMessagesResponseError": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "api/pi-messages.ts"
         ],
-        "reason": "pi-messages error type pending the public facade in api/pi_messages.rs."
+        "rust": "StreamFailure",
+        "note": "Made public; same message/code/diagnostic-details payload, threaded into the stream error event instead of thrown."
       },
       "clampMaxTokensToContext": {
         "status": "mapped",
@@ -2185,11 +2190,11 @@
         ]
       },
       "resolveCloudflareModel": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "providers/cloudflare-stream.ts"
         ],
-        "reason": "Model resolution is inlined in cloudflare_stream.rs; the public helper is pending."
+        "rust": "resolve_cloudflare_model"
       },
       "cloudflareStreams": {
         "status": "mapped",
@@ -2234,11 +2239,12 @@
         ]
       },
       "FauxContentBlock": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "providers/faux.ts"
         ],
-        "reason": "Faux content union pending public type aliases over TextContent/ThinkingContent/ToolCall."
+        "rust": "FauxContent",
+        "note": "Renamed in Rust."
       },
       "fauxText": {
         "status": "mapped",
@@ -2297,11 +2303,12 @@
         ]
       },
       "FauxProviderRegistration": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "providers/faux.ts"
         ],
-        "reason": "Faux registration shape pending a public type (CompatFauxRegistration exists for the compat path)."
+        "rust": "CompatFauxRegistration",
+        "note": "The registration-with-unregister envelope lives in compat.rs and derefs to FauxProviderHandle."
       },
       "FauxProviderHandle": {
         "status": "mapped",
@@ -2311,11 +2318,12 @@
         ]
       },
       "createFauxCore": {
-        "status": "partial",
+        "status": "mapped",
         "files": [
           "providers/faux.ts"
         ],
-        "reason": "Faux core construction pending a public facade (register_faux_provider exists in compat.rs)."
+        "rust": "faux_provider",
+        "note": "The faux core handle: faux_provider returns FauxProviderHandle with the getModel/state/setResponses/appendResponses/getPendingResponseCount surface."
       },
       "fauxProvider": {
         "status": "mapped",

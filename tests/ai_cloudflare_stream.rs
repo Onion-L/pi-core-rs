@@ -144,3 +144,28 @@ fn keeps_missing_env_entries_as_placeholders() {
         ]
     );
 }
+
+// Direct coverage of the now-public `resolveCloudflareModel` port: env values
+// replace placeholders, absent entries keep them, and an unchanged base URL
+// returns the model untouched.
+#[test]
+fn resolve_cloudflare_model_substitutes_env_placeholders() {
+    use pi_core::ai::providers::cloudflare_stream::resolve_cloudflare_model;
+
+    let model = test_model();
+
+    let resolved = resolve_cloudflare_model(
+        model.clone(),
+        Some(&env_from(&[
+            ("CLOUDFLARE_ACCOUNT_ID", "acct"),
+            ("CLOUDFLARE_GATEWAY_ID", "gw"),
+        ])),
+    );
+    assert_eq!(
+        resolved.base_url,
+        "https://gateway.ai.cloudflare.com/v1/acct/gw/openai"
+    );
+
+    let passthrough = resolve_cloudflare_model(model.clone(), None);
+    assert_eq!(passthrough.base_url, model.base_url);
+}

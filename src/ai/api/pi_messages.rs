@@ -535,8 +535,10 @@ pub fn stream(
     event_stream
 }
 
-/// The failure payload threaded from run_stream to the error event.
-struct StreamFailure {
+/// Port of the `PiMessagesResponseError` shape (message, code, diagnostic
+/// details). Rather than throwing mid-stream, the Rust port threads this
+/// payload from `run_stream` into the stream's error event.
+pub struct StreamFailure {
     message: String,
     code: Option<String>,
     diagnostic_details: Option<Value>,

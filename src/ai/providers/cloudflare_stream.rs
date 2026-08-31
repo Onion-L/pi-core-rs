@@ -14,7 +14,7 @@ const CLOUDFLARE_GATEWAY_ID: &str = "CLOUDFLARE_GATEWAY_ID";
 
 /// Port of `resolveCloudflareModel`. Missing env entries keep their
 /// placeholders; a model whose base URL is unchanged is returned as-is.
-fn resolve_model(model: Model, env: Option<&ProviderEnv>) -> Model {
+pub fn resolve_cloudflare_model(model: Model, env: Option<&ProviderEnv>) -> Model {
     let Some(env) = env else { return model };
     let account_id = env
         .get(CLOUDFLARE_ACCOUNT_ID)
@@ -48,8 +48,11 @@ pub fn cloudflare_streams(streams: Arc<dyn ProviderStreams>) -> Arc<dyn Provider
             options: Option<&StreamOptions>,
         ) -> AssistantMessageEventStream {
             let env = options.and_then(|options| options.base.env.as_ref());
-            self.0
-                .stream(&resolve_model(model.clone(), env), context, options)
+            self.0.stream(
+                &resolve_cloudflare_model(model.clone(), env),
+                context,
+                options,
+            )
         }
         fn stream_simple(
             &self,
@@ -58,8 +61,11 @@ pub fn cloudflare_streams(streams: Arc<dyn ProviderStreams>) -> Arc<dyn Provider
             options: Option<&SimpleStreamOptions>,
         ) -> AssistantMessageEventStream {
             let env = options.and_then(|options| options.base.base.env.as_ref());
-            self.0
-                .stream_simple(&resolve_model(model.clone(), env), context, options)
+            self.0.stream_simple(
+                &resolve_cloudflare_model(model.clone(), env),
+                context,
+                options,
+            )
         }
     }
     Arc::new(CloudflareStreams(streams))

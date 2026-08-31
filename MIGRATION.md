@@ -71,7 +71,7 @@ upstream package).
 | `src/api/github-copilot-headers.ts` | `src/ai/api/github_copilot_headers.rs` | done |
 | `src/api/google-generative-ai.lazy.ts` | `src/ai/providers/apis.rs` | done |
 | `src/api/google-generative-ai.ts` | `src/ai/api/google_generative_ai.rs` | done (stream/event mapping, headers, and retry ported; a provided custom `fetch` rejects with the TypeScript message — tests inject through `stream_with_transport`, the mocked-SDK seam; passing the ambient fetch explicitly has no Rust counterpart) |
-| `src/api/google-shared.ts` | `src/ai/api/google_shared.rs` | done |
+| `src/api/google-shared.ts` | `src/ai/api/google_shared.rs` | done (`mapStopReason`/`retryGoogleRequest` map to the public `map_stop_reason_string`/`retry_provider_request` facades) |
 | `src/api/google-vertex.lazy.ts` | `src/ai/providers/apis.rs` | done |
 | `src/api/google-vertex.ts` | `src/ai/api/google_vertex.rs` | done (stream/event mapping and auth-header resolution ported; a provided custom `fetch` rejects with the TypeScript message — tests inject through `stream_with_transport`, the mocked-SDK seam; passing the ambient fetch explicitly has no Rust counterpart) |
 | `src/api/lazy.ts` | `src/ai/providers/apis.rs` | done (lazy loading collapses to direct dispatch; the Node module-registry probe in `test/lazy-module-load.test.ts` has no Rust equivalent — disposition recorded with `src/providers/all.ts`) |
@@ -88,7 +88,7 @@ upstream package).
 | `src/api/openrouter-images.lazy.ts` | `src/ai/providers/builtin.rs` | done (direct dispatch adapter) |
 | `src/api/openrouter-images.ts` | `src/ai/api/openrouter_images.rs` | done (request/response handling, retry, and usage parsing ported; the abort signal rides on the request like the OpenAI-SDK signal wiring, and the transport rejects an already-aborted signal) |
 | `src/api/pi-messages.lazy.ts` | `src/ai/providers/apis.rs` | done |
-| `src/api/pi-messages.ts` | `src/ai/api/pi_messages.rs` | done |
+| `src/api/pi-messages.ts` | `src/ai/api/pi_messages.rs` | done (`PiMessagesResponseError` shape is the public `StreamFailure`, threaded into the error event; typed `PiMessagesEvent` union remains partial) |
 | `src/api/simple-options.ts` | `src/ai/api/simple_options.rs` | done |
 | `src/api/transform-messages.ts` | `src/ai/api/transform_messages.rs` | done |
 | `src/auth/context.ts` | `src/ai/auth/context.rs` | done |
@@ -141,12 +141,12 @@ upstream package).
 | `src/providers/cloudflare-ai-gateway.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
 | `src/providers/cloudflare-ai-gateway.ts` | `src/ai/providers/cloudflare_ai_gateway.rs` | done |
 | `src/providers/cloudflare-auth.ts` | `src/ai/providers/cloudflare_auth.rs` | done |
-| `src/providers/cloudflare-stream.ts` | `src/ai/providers/cloudflare_stream.rs` | done |
+| `src/providers/cloudflare-stream.ts` | `src/ai/providers/cloudflare_stream.rs` | done (`resolveCloudflareModel` is public as `resolve_cloudflare_model`) |
 | `src/providers/cloudflare-workers-ai.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
 | `src/providers/cloudflare-workers-ai.ts` | `src/ai/providers/cloudflare_workers_ai.rs` | done |
 | `src/providers/deepseek.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
 | `src/providers/deepseek.ts` | `src/ai/providers/builtin.rs` | done |
-| `src/providers/faux.ts` | `src/ai/providers/faux.rs` | done |
+| `src/providers/faux.ts` | `src/ai/providers/faux.rs` | done (`createFauxCore` maps to `faux_provider` + `FauxProviderHandle`; the registration-with-unregister envelope is `CompatFauxRegistration`) |
 | `src/providers/fireworks.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
 | `src/providers/fireworks.ts` | `src/ai/providers/builtin.rs` | done |
 | `src/providers/github-copilot.models.ts` | `src/ai/data/models.generated.json` | done (generated catalog; see `src/ai/models_generated.rs`) |
