@@ -301,10 +301,10 @@ upstream package).
 | `test/google-thinking-level-map.test.ts` | `tests/ai_google_shared.rs` | done |
 | `test/google-thinking-signature.test.ts` | `tests/ai_google_shared.rs` | done |
 | `test/google-vertex-api-key-resolution.test.ts` | `tests/ai_google_vertex.rs` | done (asserted on the resolved dispatch and the public resolvers) |
-| `test/image-model-data.test.ts` | | n/a — tests the TS oracle generator script (`scripts/generate-image-models.ts`); the generated catalog it produces is committed via `scripts/oracle/export-model-catalog.mts` |
+| `test/image-model-data.test.ts` | | exception — tests the TS oracle generator script (`scripts/generate-image-models.ts`); the generated catalog it produces is committed via `scripts/oracle/export-model-catalog.mts` |
 | `test/image-tool-result.test.ts` | `tests/ai_live_tool_calls.rs` | live (42 active cases use the TS matrix; 4 upstream `it.skip` cases remain skipped) |
 | `test/images-models.test.ts` | `tests/ai_images_models.rs` (+ `tests/ai_providers.rs` for the builtinImagesModels case) | done |
-| `test/images.test.ts` | `tests/ai_live_images.rs` | live (gated on OPENROUTER_API_KEY) |
+| `test/images.test.ts` | `tests/ai_live_images.rs` | exception (credential-gated upstream fixture never passes `OPENROUTER_API_KEY` to direct `generateImages`; with the gate enabled both TS and Rust surface `No API key for provider: openrouter` instead of reaching the image API, documented in `tests/ai_live_images.rs`) |
 | `test/interleaved-thinking.test.ts` | `tests/ai_live_anthropic_features.rs` | live (gated on Bedrock and Anthropic credentials) |
 | `test/kimi-coding-oauth.test.ts` | `tests/ai_oauth_kimi_coding.rs` | done |
 | `test/lax-message-content.test.ts` |  | exception (Rust's closed `Message` content types cannot represent null/missing content — the laxness the TS test pins is enforced by the type system; see the same class of note in `tests/harness_truncate.rs`) |
@@ -363,7 +363,7 @@ upstream package).
 | `test/retry.test.ts` | `tests/ai_retry.rs` | done |
 | `test/sampling-options.test.ts` | `tests/ai_openai_completions.rs` | done |
 | `test/scratch.ts` | | exception: scratch file, not a test |
-| `test/stream.test.ts` | `tests/ai_live_stream.rs` | live (233 cases use the TS provider/model matrix and gates) |
+| `test/stream.test.ts` | `tests/ai_live_stream.rs` | live (234 cases use the TS provider/model matrix and gates) |
 | `test/supports-xhigh.test.ts` | `tests/ai_supports_xhigh.rs` | done |
 | `test/telemetry-options.test.ts` | `tests/ai_telemetry_options.rs` | done |
 | `test/text.test.ts` | inline in `src/ai/utils/text.rs` | done |

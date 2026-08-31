@@ -73,15 +73,32 @@ fn probe_priority(model: &Model) -> f64 {
 }
 
 fn select_probe(models: &[Model]) -> Model {
+    select_probe_filtered(models, |_| true).expect("non-empty provider model list")
+}
+
+fn select_forced_probe(models: &[Model]) -> Option<Model> {
+    select_probe_filtered(models, |model| {
+        model
+            .compat
+            .as_ref()
+            .and_then(|compat| compat.supports_eager_tool_input_streaming)
+            != Some(false)
+    })
+}
+
+fn select_probe_filtered<F>(models: &[Model], predicate: F) -> Option<Model>
+where
+    F: Fn(&Model) -> bool,
+{
     models
         .iter()
+        .filter(|model| predicate(model))
         .min_by(|left, right| {
             probe_priority(left)
                 .total_cmp(&probe_priority(right))
                 .then_with(|| left.id.cmp(&right.id))
         })
-        .expect("non-empty provider model list")
-        .clone()
+        .cloned()
 }
 
 async fn provider_key(provider: &str) -> Option<String> {
@@ -220,13 +237,7 @@ async fn anthropic_eager_tool_input_provider_matrix() {
         let configured = select_probe(&models);
         accepts_tool_request(&configured, &key).await;
 
-        if configured
-            .compat
-            .as_ref()
-            .and_then(|compat| compat.supports_eager_tool_input_streaming)
-            != Some(false)
-        {
-            let mut forced = configured;
+        if let Some(mut forced) = select_forced_probe(&models) {
             forced
                 .compat
                 .get_or_insert_with(ModelCompat::default)
