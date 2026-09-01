@@ -737,6 +737,7 @@ fn stub_models_with_simple_responses(
     let provider = Arc::new(pi_core::ai::models::BasicProvider::new(
         pi_core::ai::models::CreateProviderOptions {
             id: "stub-compaction".to_string(),
+            organization_id: None,
             name: None,
             base_url: None,
             headers: None,

@@ -5,6 +5,7 @@ use std::sync::Arc;
 use crate::ai::auth::types::ProviderAuth;
 use crate::ai::models::{CreateProviderOptions, Provider, ProviderApi, create_provider};
 use crate::ai::providers::apis::openai_completions_api;
+use crate::ai::providers::builtin::organization_for_provider;
 use crate::ai::providers::cloudflare_auth::cloudflare_workers_ai_auth;
 use crate::ai::providers::cloudflare_stream::cloudflare_streams;
 
@@ -12,6 +13,7 @@ use crate::ai::providers::cloudflare_stream::cloudflare_streams;
 pub fn cloudflare_workers_ai_provider() -> Arc<dyn Provider> {
     create_provider(CreateProviderOptions {
         id: "cloudflare-workers-ai".to_string(),
+        organization_id: organization_for_provider("cloudflare-workers-ai").map(str::to_string),
         name: Some("Cloudflare Workers AI".to_string()),
         base_url: None,
         headers: None,

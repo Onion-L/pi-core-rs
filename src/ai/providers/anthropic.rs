@@ -16,6 +16,7 @@ use crate::ai::env_api_keys::{
 };
 use crate::ai::models::{CreateProviderOptions, Provider, ProviderApi, create_provider};
 use crate::ai::providers::apis::anthropic_messages_api;
+use crate::ai::providers::builtin::organization_for_provider;
 use crate::ai::types::ProviderHeaders;
 
 /// Port of the `anthropicApiKeyAuth` value.
@@ -128,6 +129,7 @@ fn anthropic_api_key_auth() -> Arc<dyn ApiKeyAuth> {
 pub fn anthropic_provider() -> Arc<dyn Provider> {
     create_provider(CreateProviderOptions {
         id: "anthropic".to_string(),
+        organization_id: organization_for_provider("anthropic").map(str::to_string),
         name: Some("Anthropic".to_string()),
         base_url: Some("https://api.anthropic.com".to_string()),
         headers: None,

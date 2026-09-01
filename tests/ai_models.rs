@@ -484,6 +484,7 @@ async fn produces_a_stream_error_for_a_model_whose_api_has_no_implementation() {
     let provider =
         pi_core::ai::models::create_provider(pi_core::ai::models::CreateProviderOptions {
             id: "mixed".to_string(),
+            organization_id: None,
             name: None,
             base_url: None,
             headers: None,
@@ -1472,6 +1473,7 @@ async fn restores_cached_models_before_waiting_for_network_auth() {
     auth.resolve.lock().unwrap().replace(resolve_gate);
     let provider = create_provider(CreateProviderOptions {
         id: "dynamic".to_string(),
+        organization_id: None,
         name: None,
         base_url: None,
         headers: None,
@@ -1602,6 +1604,7 @@ async fn persists_dynamic_catalogs_and_restores_them_without_network_access() {
     let create_dynamic_provider = |fetch_models: Option<FetchModelsFn>| {
         create_provider(CreateProviderOptions {
             id: "dynamic".to_string(),
+            organization_id: None,
             name: None,
             base_url: None,
             headers: None,

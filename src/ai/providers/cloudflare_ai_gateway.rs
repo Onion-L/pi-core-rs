@@ -8,6 +8,7 @@ use crate::ai::models::{CreateProviderOptions, Provider, ProviderApi, create_pro
 use crate::ai::providers::apis::{
     anthropic_messages_api, openai_completions_api, openai_responses_api,
 };
+use crate::ai::providers::builtin::organization_for_provider;
 use crate::ai::providers::cloudflare_auth::cloudflare_ai_gateway_auth;
 use crate::ai::providers::cloudflare_stream::cloudflare_streams;
 
@@ -28,6 +29,7 @@ pub fn cloudflare_ai_gateway_provider() -> Arc<dyn Provider> {
     );
     create_provider(CreateProviderOptions {
         id: "cloudflare-ai-gateway".to_string(),
+        organization_id: organization_for_provider("cloudflare-ai-gateway").map(str::to_string),
         name: Some("Cloudflare AI Gateway".to_string()),
         base_url: None,
         headers: None,

@@ -689,6 +689,7 @@ async fn lazily_exposes_only_declared_deferred_capabilities() {
     let provider =
         pi_core::ai::models::create_provider(pi_core::ai::models::CreateProviderOptions {
             id: "mixed".to_string(),
+            organization_id: None,
             name: None,
             base_url: None,
             headers: None,
@@ -732,6 +733,7 @@ async fn dispatches_on_model_api_for_mixed_api_providers() {
     let provider =
         pi_core::ai::models::create_provider(pi_core::ai::models::CreateProviderOptions {
             id: "mixed".to_string(),
+            organization_id: None,
             name: None,
             base_url: None,
             headers: None,
@@ -827,6 +829,7 @@ async fn merges_provider_resolved_env_into_stream_options() {
     let provider =
         pi_core::ai::models::create_provider(pi_core::ai::models::CreateProviderOptions {
             id: "env-provider".to_string(),
+            organization_id: None,
             name: None,
             base_url: None,
             headers: None,
@@ -976,6 +979,7 @@ async fn applies_resolved_request_options_to_deferred_fetch_and_cancellation() {
     let provider =
         pi_core::ai::models::create_provider(pi_core::ai::models::CreateProviderOptions {
             id: "deferred-provider".to_string(),
+            organization_id: None,
             name: None,
             base_url: None,
             headers: None,
@@ -1283,6 +1287,7 @@ async fn lets_a_newer_dynamic_refresh_bypass_and_supersede_older_network_work() 
     let provider =
         pi_core::ai::models::create_provider(pi_core::ai::models::CreateProviderOptions {
             id: "dynamic".to_string(),
+            organization_id: None,
             name: None,
             base_url: None,
             headers: None,
@@ -1661,4 +1666,71 @@ fn per_provider_factories_match_the_all_ts_registry() {
 
     let radius = radius_provider(RadiusProviderOptions::default());
     assert_eq!(radius.id(), "radius");
+}
+
+/// Rust-side extension: the hand-maintained organization grouping from
+/// `builtin::organization_for_provider`, mirrored here so any drift between
+/// the table and the constructed providers fails this test. Providers that
+/// stand alone (e.g. `anthropic`) report `None` by convention.
+#[test]
+fn builtin_provider_organization_ids() {
+    const EXPECTED: &[(&str, Option<&str>)] = &[
+        ("amazon-bedrock", None),
+        ("ant-ling", None),
+        ("anthropic", None),
+        ("azure-openai-responses", None),
+        ("baseten", None),
+        ("cerebras", None),
+        ("cloudflare-ai-gateway", Some("cloudflare")),
+        ("cloudflare-workers-ai", Some("cloudflare")),
+        ("deepseek", None),
+        ("fireworks", None),
+        ("github-copilot", None),
+        ("google", Some("google")),
+        ("google-vertex", Some("google")),
+        ("groq", None),
+        ("huggingface", None),
+        ("kimi-coding", Some("moonshot-kimi")),
+        ("minimax", Some("minimax")),
+        ("minimax-cn", Some("minimax")),
+        ("mistral", None),
+        ("moonshotai", Some("moonshot")),
+        ("moonshotai-cn", Some("moonshot")),
+        ("nvidia", None),
+        ("openai", Some("openai")),
+        ("openai-codex", Some("openai")),
+        ("opencode", Some("opencode")),
+        ("opencode-go", Some("opencode")),
+        ("openrouter", None),
+        ("qwen-token-plan", Some("qwen")),
+        ("qwen-token-plan-cn", Some("qwen")),
+        ("qwen-token-plan-individual", Some("qwen")),
+        ("radius", None),
+        ("together", None),
+        ("vercel-ai-gateway", None),
+        ("xai", None),
+        ("xiaomi", Some("xiaomi")),
+        ("xiaomi-token-plan-ams", Some("xiaomi")),
+        ("xiaomi-token-plan-cn", Some("xiaomi")),
+        ("xiaomi-token-plan-sgp", Some("xiaomi")),
+        ("zai", Some("zai")),
+        ("zai-coding-cn", Some("zai")),
+    ];
+
+    let actual: Vec<(String, Option<String>)> =
+        pi_core::ai::providers::builtin::builtin_providers()
+            .iter()
+            .map(|provider| {
+                (
+                    provider.id().to_string(),
+                    provider.organization_id().map(str::to_string),
+                )
+            })
+            .collect();
+    let expected: Vec<(String, Option<String>)> = EXPECTED
+        .iter()
+        .map(|(id, org)| (id.to_string(), org.map(str::to_string)))
+        .collect();
+
+    assert_eq!(actual, expected);
 }

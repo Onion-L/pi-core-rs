@@ -793,6 +793,7 @@ async fn stops_policy_updates_and_persists_authentication_when_the_retry_delay_e
     let provider =
         pi_core::ai::models::create_provider(pi_core::ai::models::CreateProviderOptions {
             id: "github-copilot".to_string(),
+            organization_id: None,
             name: Some("GitHub Copilot".to_string()),
             base_url: Some("https://api.individual.githubcopilot.com".to_string()),
             headers: None,

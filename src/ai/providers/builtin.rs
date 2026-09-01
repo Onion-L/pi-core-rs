@@ -37,6 +37,28 @@ use crate::ai::providers::cloudflare_workers_ai::cloudflare_workers_ai_provider;
 use crate::ai::providers::google_vertex::google_vertex_provider;
 use crate::ai::types::{ImagesContext, ImagesModel, ImagesOptions, Model};
 
+/// Rust-side extension: organization grouping for built-in providers, keyed
+/// by provider id. Upstream TypeScript has no such concept, so this mapping
+/// is maintained by hand next to the provider definitions; providers that
+/// stand alone report `None` and consumers fall back to the provider id.
+pub(crate) fn organization_for_provider(id: &str) -> Option<&'static str> {
+    match id {
+        "openai" | "openai-codex" => Some("openai"),
+        "google" | "google-vertex" => Some("google"),
+        "minimax" | "minimax-cn" => Some("minimax"),
+        "moonshotai" | "moonshotai-cn" => Some("moonshot"),
+        "kimi-coding" => Some("moonshot-kimi"),
+        "xiaomi" | "xiaomi-token-plan-ams" | "xiaomi-token-plan-cn" | "xiaomi-token-plan-sgp" => {
+            Some("xiaomi")
+        }
+        "qwen-token-plan" | "qwen-token-plan-cn" | "qwen-token-plan-individual" => Some("qwen"),
+        "zai" | "zai-coding-cn" => Some("zai"),
+        "opencode" | "opencode-go" => Some("opencode"),
+        "cloudflare-ai-gateway" | "cloudflare-workers-ai" => Some("cloudflare"),
+        _ => None,
+    }
+}
+
 /// One uniform env-key provider row: `createProvider` with an
 /// `envApiKeyAuth`, a base URL, and a single API implementation.
 struct UniformSpec {
@@ -205,6 +227,7 @@ fn uniform_provider(
 ) -> Arc<dyn Provider> {
     create_provider(CreateProviderOptions {
         id: spec.id.to_string(),
+        organization_id: organization_for_provider(spec.id).map(str::to_string),
         name: Some(spec.name.to_string()),
         base_url: spec.base_url.map(str::to_string),
         headers: None,
@@ -416,6 +439,7 @@ fn by_api(entries: &[(&str, Arc<dyn ProviderStreams>)]) -> ProviderApi {
 pub fn fireworks_provider() -> Arc<dyn Provider> {
     create_provider(CreateProviderOptions {
         id: "fireworks".to_string(),
+        organization_id: organization_for_provider("fireworks").map(str::to_string),
         name: Some("Fireworks".to_string()),
         base_url: Some("https://api.fireworks.ai/inference".to_string()),
         headers: None,
@@ -462,6 +486,7 @@ pub fn github_copilot_provider() -> Arc<dyn Provider> {
     );
     create_provider(CreateProviderOptions {
         id: "github-copilot".to_string(),
+        organization_id: organization_for_provider("github-copilot").map(str::to_string),
         name: Some("GitHub Copilot".to_string()),
         base_url: Some("https://api.individual.githubcopilot.com".to_string()),
         headers: None,
@@ -487,6 +512,7 @@ pub fn github_copilot_provider() -> Arc<dyn Provider> {
 pub fn opencode_provider() -> Arc<dyn Provider> {
     create_provider(CreateProviderOptions {
         id: "opencode".to_string(),
+        organization_id: organization_for_provider("opencode").map(str::to_string),
         name: Some("OpenCode Zen".to_string()),
         base_url: None,
         headers: None,
@@ -507,6 +533,7 @@ pub fn opencode_provider() -> Arc<dyn Provider> {
 pub fn opencode_go_provider() -> Arc<dyn Provider> {
     create_provider(CreateProviderOptions {
         id: "opencode-go".to_string(),
+        organization_id: organization_for_provider("opencode-go").map(str::to_string),
         name: Some("OpenCode Go".to_string()),
         base_url: None,
         headers: None,
@@ -526,6 +553,7 @@ pub fn opencode_go_provider() -> Arc<dyn Provider> {
 pub fn openrouter_provider() -> Arc<dyn Provider> {
     create_provider(CreateProviderOptions {
         id: "openrouter".to_string(),
+        organization_id: organization_for_provider("openrouter").map(str::to_string),
         name: Some("OpenRouter".to_string()),
         base_url: Some("https://openrouter.ai/api/v1".to_string()),
         headers: None,
@@ -547,6 +575,7 @@ pub fn openrouter_provider() -> Arc<dyn Provider> {
 pub fn xai_provider() -> Arc<dyn Provider> {
     create_provider(CreateProviderOptions {
         id: "xai".to_string(),
+        organization_id: organization_for_provider("xai").map(str::to_string),
         name: Some("xAI".to_string()),
         base_url: Some("https://api.x.ai/v1".to_string()),
         headers: None,
@@ -565,6 +594,7 @@ pub fn xai_provider() -> Arc<dyn Provider> {
 pub fn kimi_coding_provider() -> Arc<dyn Provider> {
     create_provider(CreateProviderOptions {
         id: "kimi-coding".to_string(),
+        organization_id: organization_for_provider("kimi-coding").map(str::to_string),
         name: Some("Kimi For Coding".to_string()),
         base_url: Some("https://api.kimi.com/coding".to_string()),
         headers: None,
@@ -583,6 +613,7 @@ pub fn kimi_coding_provider() -> Arc<dyn Provider> {
 pub fn openai_codex_provider() -> Arc<dyn Provider> {
     create_provider(CreateProviderOptions {
         id: "openai-codex".to_string(),
+        organization_id: organization_for_provider("openai-codex").map(str::to_string),
         name: Some("OpenAI Codex".to_string()),
         base_url: Some("https://chatgpt.com/backend-api".to_string()),
         headers: None,

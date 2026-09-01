@@ -282,6 +282,7 @@ async fn telemetry_context_survives_provider_and_models_stream_deferred_dispatch
 
     let provider = create_provider(CreateProviderOptions {
         id: model.provider.clone(),
+        organization_id: None,
         name: None,
         base_url: None,
         headers: None,

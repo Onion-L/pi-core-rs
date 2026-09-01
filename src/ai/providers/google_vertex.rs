@@ -12,6 +12,7 @@ use crate::ai::auth::types::{
 };
 use crate::ai::models::{CreateProviderOptions, Provider, ProviderApi, create_provider};
 use crate::ai::providers::apis::google_vertex_api;
+use crate::ai::providers::builtin::organization_for_provider;
 use crate::ai::types::ProviderEnv;
 
 const VERTEX_ADC_PATH: &str = "~/.config/gcloud/application_default_credentials.json";
@@ -268,6 +269,7 @@ fn vertex_auth() -> Arc<dyn ApiKeyAuth> {
 pub fn google_vertex_provider() -> Arc<dyn Provider> {
     create_provider(CreateProviderOptions {
         id: "google-vertex".to_string(),
+        organization_id: organization_for_provider("google-vertex").map(str::to_string),
         name: Some("Google Vertex AI".to_string()),
         base_url: None,
         headers: None,

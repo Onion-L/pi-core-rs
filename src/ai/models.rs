@@ -141,6 +141,15 @@ pub trait Provider: Send + Sync {
 
     fn name(&self) -> &str;
 
+    /// Rust-side extension: upstream TypeScript `Provider` has no
+    /// organization concept. Groups providers operated by the same
+    /// organization (for example `minimax` and `minimax-cn` both report
+    /// `"minimax"`). `None` means the provider stands alone; consumers can
+    /// fall back to [`Provider::id`] for a grouping key.
+    fn organization_id(&self) -> Option<&str> {
+        None
+    }
+
     fn base_url(&self) -> Option<&str> {
         None
     }
@@ -1393,6 +1402,8 @@ pub struct CreateProviderOptions {
     /// One implementation for all models, or an api-keyed map that dispatches
     /// on `model.api`.
     pub api: ProviderApi,
+    /// Rust-side extension, see [`Provider::organization_id`].
+    pub organization_id: Option<String>,
 }
 
 /// The `api` field of [`CreateProviderOptions`]: a single implementation or
@@ -1442,6 +1453,7 @@ pub struct BasicProvider {
     fetch_models: Option<FetchModelsFn>,
     filter_models: Option<FilterModelsFn>,
     api: ProviderApi,
+    organization_id: Option<String>,
 }
 
 impl BasicProvider {
@@ -1457,6 +1469,7 @@ impl BasicProvider {
             fetch_models: input.fetch_models,
             filter_models: input.filter_models,
             api: input.api,
+            organization_id: input.organization_id,
         }
     }
 
@@ -1504,6 +1517,10 @@ impl Provider for BasicProvider {
 
     fn name(&self) -> &str {
         &self.name
+    }
+
+    fn organization_id(&self) -> Option<&str> {
+        self.organization_id.as_deref()
     }
 
     fn base_url(&self) -> Option<&str> {

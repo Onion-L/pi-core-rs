@@ -13,6 +13,7 @@ use crate::ai::auth::types::{
 };
 use crate::ai::models::{CreateProviderOptions, Provider, ProviderApi, create_provider};
 use crate::ai::providers::apis::bedrock_converse_stream_api;
+use crate::ai::providers::builtin::organization_for_provider;
 use crate::ai::types::ProviderEnv;
 
 fn aborted() -> AuthStorageError {
@@ -229,6 +230,7 @@ fn bedrock_auth() -> Arc<dyn ApiKeyAuth> {
 pub fn amazon_bedrock_provider() -> Arc<dyn Provider> {
     create_provider(CreateProviderOptions {
         id: "amazon-bedrock".to_string(),
+        organization_id: organization_for_provider("amazon-bedrock").map(str::to_string),
         name: Some("Amazon Bedrock".to_string()),
         base_url: None,
         headers: None,

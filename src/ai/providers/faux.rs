@@ -9,6 +9,7 @@ use futures::future::BoxFuture;
 
 use crate::ai::auth::resolve::ModelsError;
 use crate::ai::models::{BasicProvider, CreateProviderOptions, ProviderStreams};
+use crate::ai::providers::builtin::organization_for_provider;
 use crate::ai::types::{
     AssistantContent, AssistantMessage, AssistantMessageEvent, Context, DeferredHandle, DoneReason,
     ErrorReason, Message, Model, ProviderRequestOptions, SimpleStreamOptions, StopReason,
@@ -1157,7 +1158,8 @@ pub fn faux_provider(options: RegisterFauxProviderOptions) -> FauxProviderHandle
 
     let auth = crate::ai::auth::types::ProviderAuth::api_key(Arc::new(FauxApiKeyAuth));
     let core_provider: Arc<BasicProvider> = Arc::new(BasicProvider::new(CreateProviderOptions {
-        id: provider,
+        id: provider.clone(),
+        organization_id: organization_for_provider(&provider).map(str::to_string),
         name: None,
         base_url: None,
         headers: None,
