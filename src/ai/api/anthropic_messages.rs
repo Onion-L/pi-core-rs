@@ -379,62 +379,6 @@ const ANTHROPIC_MESSAGE_EVENTS: &[&str] = &[
     "content_block_stop",
 ];
 
-/// Port of `iterateAnthropicEvents`: validates and parses the SSE stream.
-/// The final `Err` carries the TypeScript error messages, including the
-/// "stream ended before message_stop" case.
-async fn iterate_anthropic_events(
-    response: crate::ai::utils::http::HttpResponse,
-    signal: Option<&tokio_util::sync::CancellationToken>,
-) -> Result<Vec<Value>, String> {
-    let mut events = Vec::new();
-    let mut saw_message_start = false;
-    let mut saw_message_end = false;
-
-    let sse_stream = SseStream::new(response.body);
-    futures::pin_mut!(sse_stream);
-
-    loop {
-        if signal.as_ref().is_some_and(|token| token.is_cancelled()) {
-            return Err("Request was aborted".to_string());
-        }
-        let Some(sse) = futures::StreamExt::next(&mut sse_stream).await else {
-            break;
-        };
-        // Transport errors arrive as synthetic error events.
-        if sse.event.as_deref() == Some("__error__") {
-            return Err(sse.data);
-        }
-        if sse.event.as_deref() == Some("error") {
-            return Err(sse.data);
-        }
-
-        if !ANTHROPIC_MESSAGE_EVENTS.contains(&sse.event.as_deref().unwrap_or("")) {
-            continue;
-        }
-
-        let event: Value = parse_json_with_repair(&sse.data).map_err(|error| {
-            format!(
-                "Could not parse Anthropic SSE event {}: {}; data={}; raw={}",
-                sse.event.clone().unwrap_or_default(),
-                error,
-                sse.data,
-                serde_json::to_string(&sse.raw).unwrap_or_default()
-            )
-        })?;
-        match event.get("type").and_then(Value::as_str) {
-            Some("message_start") => saw_message_start = true,
-            Some("message_stop") => saw_message_end = true,
-            _ => {}
-        }
-        events.push(event);
-    }
-
-    if saw_message_start && !saw_message_end {
-        return Err("Anthropic stream ended before message_stop".to_string());
-    }
-    Ok(events)
-}
-
 /// The resolved HTTP request plan standing in for the TypeScript SDK client.
 struct AnthropicRequestPlan {
     url: String,
@@ -1369,8 +1313,46 @@ async fn run_stream(
     // partial-JSON buffer for tool calls.
     let mut blocks: Vec<Block> = Vec::new();
 
-    let events = iterate_anthropic_events(response, signal.as_ref()).await?;
-    for event in events {
+    // Incremental: each SSE event is validated, parsed, and pushed to the
+    // producer AS IT ARRIVES. Draining the response into a Vec first (the
+    // previous shape) held every delta until the stream closed — the consumer
+    // saw `Start` at once and then the entire reply in one burst, which read
+    // as "no streaming" for every provider on this transport.
+    let sse_stream = SseStream::new(response.body);
+    futures::pin_mut!(sse_stream);
+    let mut saw_message_start = false;
+    let mut saw_message_stop = false;
+    loop {
+        if signal.as_ref().is_some_and(|token| token.is_cancelled()) {
+            return Err("Request was aborted".to_string());
+        }
+        let Some(sse) = futures::StreamExt::next(&mut sse_stream).await else {
+            break;
+        };
+        // Transport errors arrive as synthetic error events.
+        if sse.event.as_deref() == Some("__error__") {
+            return Err(sse.data);
+        }
+        if sse.event.as_deref() == Some("error") {
+            return Err(sse.data);
+        }
+        if !ANTHROPIC_MESSAGE_EVENTS.contains(&sse.event.as_deref().unwrap_or("")) {
+            continue;
+        }
+        let event: Value = parse_json_with_repair(&sse.data).map_err(|error| {
+            format!(
+                "Could not parse Anthropic SSE event {}: {}; data={}; raw={}",
+                sse.event.clone().unwrap_or_default(),
+                error,
+                sse.data,
+                serde_json::to_string(&sse.raw).unwrap_or_default()
+            )
+        })?;
+        match event.get("type").and_then(Value::as_str) {
+            Some("message_start") => saw_message_start = true,
+            Some("message_stop") => saw_message_stop = true,
+            _ => {}
+        }
         let event_type = event
             .get("type")
             .and_then(Value::as_str)
@@ -1770,6 +1752,10 @@ async fn run_stream(
             }
             _ => {}
         }
+    }
+
+    if saw_message_start && !saw_message_stop {
+        return Err("Anthropic stream ended before message_stop".to_string());
     }
 
     if signal.as_ref().is_some_and(|token| token.is_cancelled()) {
