@@ -512,7 +512,10 @@ async fn run_stream(
     let mut current_block: Option<CurrentBlock> = None;
     let block_index = |output: &AssistantMessage| output.content.len().saturating_sub(1);
 
-    let mut sse = crate::ai::utils::sse::SseStream::new(response.body);
+    let mut sse = crate::ai::utils::sse::SseStream::with_signal(
+        response.body,
+        options.and_then(|options| options.base.base.signal.clone()),
+    );
     while let Some(sse_event) = futures::StreamExt::next(&mut sse).await {
         if sse_event.event.as_deref() == Some("__error__") {
             return Err(sse_event.data);

@@ -55,10 +55,17 @@ use tokio_util::sync::CancellationToken;
 /// Reads an environment variable the way the TypeScript suites use it:
 /// unset *or empty* is falsy for `process.env.X` truthiness checks.
 pub fn live_env(name: &str) -> Option<String> {
+    if offline() {
+        return None;
+    }
     match std::env::var(name) {
         Ok(value) if !value.is_empty() => Some(value),
         _ => None,
     }
+}
+
+fn offline() -> bool {
+    std::env::var("PI_TEST_OFFLINE").is_ok_and(|value| value == "1")
 }
 
 /// Port of `hasAzureOpenAICredentials` (azure-utils.ts).
@@ -113,6 +120,10 @@ pub fn has_cloudflare_ai_gateway_credentials() -> bool {
 
 /// Prints the standard live-suite skip line and returns.
 pub fn skip(suite: &str, env: &str) {
+    if offline() {
+        eprintln!("SKIP: {suite}: PI_TEST_OFFLINE=1 disables live credentials and services");
+        return;
+    }
     eprintln!("SKIP: {suite} requires {env}");
 }
 
@@ -156,6 +167,9 @@ fn save_auth_storage(path: &std::path::Path, storage: &serde_json::Map<String, s
 /// key directly; OAuth credentials refresh when expired (saving the rotated
 /// credential back) and return the derived request API key.
 pub async fn resolve_api_key(provider: &str) -> Option<String> {
+    if offline() {
+        return None;
+    }
     let path = auth_storage_path()?;
     let content = std::fs::read_to_string(&path).ok()?;
     let mut storage: serde_json::Map<String, serde_json::Value> =
@@ -557,6 +571,9 @@ fn command_succeeds(program: &str, args: &[&str]) -> bool {
 /// TS: `execSync("which ollama", { stdio: "ignore" })` succeeds, unless
 /// `PI_NO_LOCAL_LLM` is set.
 pub fn ollama_installed() -> bool {
+    if offline() {
+        return false;
+    }
     if live_env("PI_NO_LOCAL_LLM").is_some() {
         return false;
     }
@@ -668,6 +685,9 @@ pub async fn setup_ollama() -> OllamaSetup {
 
 /// TS LM Studio probe: `curl -s --max-time 1 http://localhost:1234/v1/models`.
 pub fn lm_studio_running() -> bool {
+    if offline() {
+        return false;
+    }
     if live_env("PI_NO_LOCAL_LLM").is_some() {
         return false;
     }
@@ -680,6 +700,9 @@ pub fn lm_studio_running() -> bool {
 /// TS llama.cpp probe: a `/health` curl plus a POST status probe that must
 /// not answer 404/405/000.
 pub fn llama_cpp_running() -> bool {
+    if offline() {
+        return false;
+    }
     if live_env("PI_NO_LOCAL_LLM").is_some() {
         return false;
     }

@@ -2,6 +2,7 @@
 name = "pi-core-rs"
 version = "0.84.4"
 edition = "2024"
+rust-version = "1.88"
 license = "MIT"
 description = "Standalone Rust port of @earendil-works/pi-agent-core, pi-ai, and pi-telemetry v0.84.4"
 repository = "https://github.com/earendil-works/pi"

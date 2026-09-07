@@ -664,32 +664,9 @@ fn build_mistral_headers(
 
 /// Mistral event-frame boundary search. Port of `findMistralEventBoundary`:
 /// the longest of `\r\n\r\n | \r\n\r | \r\n\n | \r\r\n | \n\r\n | \r\r | \n\r | \n\n`.
-fn find_mistral_event_boundary(buffer: &str) -> Option<(usize, usize)> {
-    let bytes = buffer.as_bytes();
-    let mut best: Option<(usize, usize)> = None;
-    for index in 0..bytes.len() {
-        for (pattern, length) in [
-            (&b"\r\n\r\n"[..], 4),
-            (&b"\r\n\r"[..], 3),
-            (&b"\r\n\n"[..], 3),
-            (&b"\r\r\n"[..], 3),
-            (&b"\n\r\n"[..], 3),
-            (&b"\r\r"[..], 2),
-            (&b"\n\r"[..], 2),
-            (&b"\n\n"[..], 2),
-        ] {
-            if bytes[index..].starts_with(pattern) {
-                let candidate = (index, length);
-                if best.is_none_or(|(best_index, best_length)| {
-                    index < best_index || (index == best_index && length > best_length)
-                }) {
-                    best = Some(candidate);
-                }
-            }
-        }
-    }
-    best
-}
+const MISTRAL_EVENT_BOUNDARIES: &[&str] = &[
+    "\r\n\r\n", "\r\n\r", "\r\n\n", "\r\r\n", "\n\r\n", "\r\r", "\n\r", "\n\n",
+];
 
 /// Port of `parseMistralEvent`: `Ok(Some(event))`, `Ok(None)` for no data,
 /// `Ok(DONE)` for `[DONE]`.
@@ -798,52 +775,44 @@ async fn request_mistral_stream(
     Ok(response)
 }
 
-/// Reads all Mistral events from a response body: the port of
-/// `readMistralEvents` and its consume loop; `Err` carries the transport
-/// error message. Like the TypeScript `AbortSignal.timeout(options?.
-/// timeoutMs ?? 60_000)` combined with the caller's signal, the wait for
-/// body chunks is bounded by the request timeout and aborts when the caller
-/// cancels (asserted in `tests/ai_mistral.rs`).
-async fn read_mistral_events(
+/// Incremental `readMistralEvents`, including its whole-body timeout.
+fn read_mistral_events(
     response: crate::ai::utils::http::HttpResponse,
     timeout_ms: Option<u64>,
     signal: Option<tokio_util::sync::CancellationToken>,
-) -> Result<Vec<Value>, String> {
-    let body = tokio::select! {
-        text = crate::ai::utils::http::collect_text(response) => text,
-        _ = tokio::time::sleep(std::time::Duration::from_millis(
-            timeout_ms.unwrap_or(60_000),
-        )) => {
-            return Err("The operation was aborted due to timeout".to_string());
-        }
-        _ = async {
-            match signal.as_ref() {
-                Some(token) => token.cancelled().await,
-                None => std::future::pending::<()>().await,
+) -> futures::stream::BoxStream<'static, Result<Value, String>> {
+    let frames = crate::ai::utils::http::text_frames(response.body, MISTRAL_EVENT_BOUNDARIES);
+    let deadline = tokio::time::Instant::now()
+        + std::time::Duration::from_millis(timeout_ms.unwrap_or(60_000));
+    Box::pin(futures::stream::unfold(
+        Some((frames, signal, deadline)),
+        |state| async {
+            let (mut frames, signal, deadline) = state?;
+            loop {
+                let frame = tokio::select! {
+                    frame = futures::StreamExt::next(&mut frames) => frame,
+                    () = tokio::time::sleep_until(deadline) => return Some((Err("The operation was aborted due to timeout".into()), None)),
+                    () = async {
+                        match &signal {
+                            Some(signal) => signal.cancelled().await,
+                            None => std::future::pending::<()>().await,
+                        }
+                    } => return Some((Err("This operation was aborted".into()), None)),
+                }?;
+                match frame
+                    .map_err(|error| error.to_string())
+                    .and_then(|raw| parse_mistral_event(&raw))
+                {
+                    Ok(ParsedMistralEvent::Done) => return None,
+                    Ok(ParsedMistralEvent::Event(event)) => {
+                        return Some((Ok(event), Some((frames, signal, deadline))));
+                    }
+                    Ok(ParsedMistralEvent::Empty) => {}
+                    Err(error) => return Some((Err(error), None)),
+                }
             }
-        } => {
-            return Err("This operation was aborted".to_string());
-        }
-    };
-    let mut events = Vec::new();
-    let mut buffer = body;
-    while let Some((index, length)) = find_mistral_event_boundary(&buffer) {
-        let raw = buffer[..index].to_string();
-        buffer = buffer[index + length..].to_string();
-        match parse_mistral_event(&raw)? {
-            ParsedMistralEvent::Done => return Ok(events),
-            ParsedMistralEvent::Event(event) => events.push(event),
-            ParsedMistralEvent::Empty => {}
-        }
-    }
-    if !buffer.trim().is_empty() {
-        match parse_mistral_event(&buffer)? {
-            ParsedMistralEvent::Done => {}
-            ParsedMistralEvent::Event(event) => events.push(event),
-            ParsedMistralEvent::Empty => {}
-        }
-    }
-    Ok(events)
+        },
+    ))
 }
 
 /// Port of the `stream` stream function.
@@ -960,10 +929,9 @@ async fn run_stream(
         response,
         options.and_then(|options| options.base.base.timeout_ms),
         options.and_then(|options| options.base.base.signal.clone()),
-    )
-    .await?;
+    );
     let mut scratch_args: BTreeMap<usize, String> = BTreeMap::new();
-    consume_chat_stream(model, output, producer, events, &mut scratch_args)?;
+    consume_chat_stream(model, output, producer, events, &mut scratch_args).await?;
 
     let signal = options.and_then(|options| options.base.base.signal.clone());
     if signal.as_ref().is_some_and(|token| token.is_cancelled()) {
@@ -1069,11 +1037,11 @@ pub fn stream_simple(
 /// Port of `consumeChatStream`: applies parsed events to the output and
 /// emits the streaming protocol events.
 #[allow(clippy::too_many_lines)]
-fn consume_chat_stream(
+async fn consume_chat_stream(
     model: &Model,
     output: &mut AssistantMessage,
     producer: &AssistantMessageEventStream,
-    events: Vec<Value>,
+    mut events: futures::stream::BoxStream<'static, Result<Value, String>>,
     scratch_args: &mut BTreeMap<usize, String>,
 ) -> Result<(), String> {
     let mut current_block: Option<MistralBlock> = None;
@@ -1120,7 +1088,8 @@ fn consume_chat_stream(
         }
     };
 
-    for event in events {
+    while let Some(event) = futures::StreamExt::next(&mut events).await {
+        let event = event?;
         // Mistral's streamed CompletionChunk carries an id field; keep the
         // first non-empty one.
         if output.response_id.is_none()

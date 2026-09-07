@@ -23,6 +23,28 @@ Status legend:
 Out of scope per `AGENTS.md`: the `node:sqlite` session backend (a separate
 upstream package).
 
+## Compatibility baseline
+
+The statuses below describe v0.84.4, not v0.85.0. The local AI oracle was
+observed at v0.85.0 during the 2026-09-06 audit, while the committed oracle
+manifest and the agent/telemetry sources still identify v0.84.4. Consequently,
+oracle integrity and TypeScript export checks currently fail. Do not regenerate
+the manifest merely to clear those failures or claim v0.85.0 compatibility from
+the Rust test results.
+
+A v0.85.0 AI migration still needs an explicit target change and parity work
+for the replacement Cloudflare AI binding API, assistant-message frames,
+timestamped UUIDs, per-turn Anthropic effort/thinking recovery, new OpenAI
+compatibility options, and the remaining upstream behavior/test changes. The
+newer model catalog alone does not complete that migration.
+
+Offline maintenance verification uses `PI_TEST_OFFLINE=1 cargo test --all-targets`.
+This explicitly disables live credentials (including local OAuth files) and
+local model services in test helpers; live scenarios remain present and report
+the opt-out reason. Provider lifecycle regressions in `tests/ai_stream_lifecycle.rs`
+also verify delivery before EOF and cancellation while the response body is
+pending. These maintenance fixes do not change the compatibility target.
+
 ## pi-telemetry
 
 ### Source modules

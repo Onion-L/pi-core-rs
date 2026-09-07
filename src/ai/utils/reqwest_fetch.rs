@@ -112,20 +112,14 @@ impl HttpFetch for ReqwestFetch {
                     )
                 })
                 .collect();
-            let signal = request.signal.clone();
-            let body = response.bytes_stream().map(move |chunk| {
-                // Post-cancellation chunks surface as a cancellation error;
-                // adapter-level signal watches still cut reads off earlier.
-                if signal.as_ref().is_some_and(|signal| signal.is_cancelled()) {
-                    return Err(HttpFetchError::Cancelled);
-                }
-                chunk.map_err(|error| HttpFetchError::Body(format!("{error}")))
-            });
+            let body = response
+                .bytes_stream()
+                .map(move |chunk| chunk.map_err(|error| HttpFetchError::Body(format!("{error}"))));
 
             Ok(HttpResponse {
                 status,
                 headers,
-                body: Box::pin(body),
+                body: super::http::abortable_body(Box::pin(body), request.signal),
             })
         })
     }

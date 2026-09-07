@@ -190,23 +190,7 @@ fn parse_pi_messages_event(raw: &str) -> Option<Value> {
 
 /// Port of `readPiMessagesEvents`: splits the body on `\n\n` (after CRLF
 /// normalization) and parses each frame; the trailing remainder is decoded.
-fn read_pi_messages_events(body: &str) -> Vec<Value> {
-    let normalized = body.replace("\r\n", "\n");
-    let mut events = Vec::new();
-    let mut buffer = normalized.as_str();
-    while let Some(split) = buffer.find("\n\n") {
-        if let Some(event) = parse_pi_messages_event(&buffer[..split]) {
-            events.push(event);
-        }
-        buffer = &buffer[split + 2..];
-    }
-    if !buffer.trim().is_empty()
-        && let Some(event) = parse_pi_messages_event(buffer)
-    {
-        events.push(event);
-    }
-    events
-}
+const PI_EVENT_BOUNDARIES: &[&str] = &["\r\n\r\n", "\r\n\n", "\n\r\n", "\n\n"];
 
 /// Port of `parsePiMessagesErrorBody`.
 fn parse_pi_messages_error_body(body: &str) -> Option<Value> {
@@ -787,8 +771,16 @@ async fn run_stream(
         });
     }
 
-    let body = crate::ai::utils::http::collect_text(response).await;
-    for pi_event in read_pi_messages_events(&body) {
+    let body = crate::ai::utils::http::abortable_body(
+        response.body,
+        options.and_then(|options| options.base.base.signal.clone()),
+    );
+    let mut frames = crate::ai::utils::http::text_frames(body, PI_EVENT_BOUNDARIES);
+    while let Some(frame) = futures::StreamExt::next(&mut frames).await {
+        let frame = frame.map_err(|error| fail(error.to_string()))?;
+        let Some(pi_event) = parse_pi_messages_event(&frame.replace("\r\n", "\n")) else {
+            continue;
+        };
         let event = converter.convert(&pi_event);
         let terminal = matches!(
             event,

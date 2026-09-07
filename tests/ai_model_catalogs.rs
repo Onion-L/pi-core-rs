@@ -224,7 +224,7 @@ fn registers_glm_5_2_as_the_default_openai_compatible_reasoning_model() {
             (ModelThinkingLevel::Max, Some("max")),
         ]))
     );
-    assert_eq!(model.input, vec![ModelInput::Text, ModelInput::Image]);
+    assert_eq!(model.input, vec![ModelInput::Text]);
     assert_eq!(model.context_window, 1_048_576);
     assert_eq!(model.max_tokens, 262_144);
     assert_eq!(model.cost, cost(1.4, 4.4, 0.3, 0.0));
@@ -843,6 +843,7 @@ fn embedded_catalog_matches_exact_generated_allowlists() {
                 "qwen3.6-flash",
                 "qwen3.7-max",
                 "qwen3.7-plus",
+                "qwen3.8-flash",
                 "qwen3.8-max",
             ],
         ),

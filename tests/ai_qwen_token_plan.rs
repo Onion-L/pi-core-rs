@@ -36,6 +36,7 @@ const TEXT_MODELS: &[&str] = &[
     "qwen3.6-plus",
     "qwen3.7-max",
     "qwen3.7-plus",
+    "qwen3.8-flash",
     "qwen3.8-max",
 ];
 
@@ -47,6 +48,7 @@ const INDIVIDUAL_TEXT_MODELS: &[&str] = &[
     "qwen3.6-flash",
     "qwen3.7-max",
     "qwen3.7-plus",
+    "qwen3.8-flash",
     "qwen3.8-max",
 ];
 
@@ -71,6 +73,7 @@ const QWEN_THINKING_MODELS: &[&str] = &[
     "qwen3.6-plus",
     "qwen3.7-max",
     "qwen3.7-plus",
+    "qwen3.8-flash",
     "qwen3.8-max",
 ];
 
@@ -88,6 +91,8 @@ const INDIVIDUAL_REASONING_EFFORT_MODELS: &[&str] = &[
     "deepseek-v4-pro-0813",
     "glm-5.2",
 ];
+
+const QWEN38_MODELS: &[&str] = &["qwen3.8-flash", "qwen3.8-max"];
 
 const TOKEN_PLAN_PROVIDERS: &[&str] = &["qwen-token-plan", "qwen-token-plan-cn"];
 
@@ -123,6 +128,18 @@ fn qwen_reasoning_effort_model_cases() -> Vec<(&'static str, &'static str)> {
     }
     for model_id in INDIVIDUAL_REASONING_EFFORT_MODELS {
         cases.push(("qwen-token-plan-individual", *model_id));
+    }
+    cases
+}
+
+/// `QWEN38_MODEL_CASES`: the qwen3.8 models on all three Token Plan
+/// providers.
+fn qwen38_model_cases() -> Vec<(&'static str, &'static str)> {
+    let mut cases = Vec::new();
+    for provider in ALL_TOKEN_PLAN_PROVIDERS {
+        for model_id in QWEN38_MODELS {
+            cases.push((*provider, *model_id));
+        }
     }
     cases
 }
@@ -339,7 +356,7 @@ fn exposes_qwen_reasoning_effort_levels_for_token_plan_model_cases() {
 }
 
 #[test]
-fn exposes_qwen3_8_reasoning_effort_levels_on_all_token_plan_providers() {
+fn exposes_qwen3_8_reasoning_effort_levels_for_qwen38_model_cases() {
     let expected: &[(ModelThinkingLevel, Option<&str>)] = &[
         (ModelThinkingLevel::Minimal, None),
         (ModelThinkingLevel::Low, Some("low")),
@@ -349,9 +366,9 @@ fn exposes_qwen3_8_reasoning_effort_levels_on_all_token_plan_providers() {
         (ModelThinkingLevel::Max, None),
     ];
 
-    for provider in ALL_TOKEN_PLAN_PROVIDERS {
-        let model = builtin(provider, "qwen3.8-max");
-        expect_thinking_level_map(provider, "qwen3.8-max", &model, expected);
+    for (provider, model_id) in qwen38_model_cases() {
+        let model = builtin(provider, model_id);
+        expect_thinking_level_map(provider, model_id, &model, expected);
     }
 }
 
@@ -382,22 +399,22 @@ async fn sends_qwen_reasoning_effort_for_token_plan_model_cases() {
 }
 
 #[tokio::test]
-async fn sends_qwen3_8_max_reasoning_effort_on_all_token_plan_providers() {
-    for provider in ALL_TOKEN_PLAN_PROVIDERS {
-        let model = builtin(provider, "qwen3.8-max");
+async fn sends_qwen3_8_xhigh_reasoning_effort_for_qwen38_model_cases() {
+    for (provider, model_id) in qwen38_model_cases() {
+        let model = builtin(provider, model_id);
 
         let payload = capture_payload(&model, Some(ThinkingLevel::Xhigh)).await;
 
         assert_eq!(
             payload.get("enable_thinking"),
             Some(&json!(true)),
-            "{provider}"
+            "{provider}/{model_id}"
         );
         assert_eq!(
             payload.get("reasoning_effort"),
             Some(&json!("xhigh")),
-            "{provider}"
+            "{provider}/{model_id}"
         );
-        assert!(payload.get("thinking").is_none(), "{provider}");
+        assert!(payload.get("thinking").is_none(), "{provider}/{model_id}");
     }
 }

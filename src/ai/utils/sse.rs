@@ -198,6 +198,16 @@ struct SseBuffer {
 }
 
 impl SseStream {
+    pub(crate) fn with_signal(
+        body: futures::stream::BoxStream<
+            'static,
+            Result<bytes::Bytes, super::http::HttpFetchError>,
+        >,
+        signal: Option<tokio_util::sync::CancellationToken>,
+    ) -> Self {
+        Self::new(super::http::abortable_body(body, signal))
+    }
+
     /// Wraps a response body into an SSE event stream.
     pub fn new(
         body: futures::stream::BoxStream<

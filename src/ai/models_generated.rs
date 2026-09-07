@@ -208,7 +208,7 @@ mod tests {
     #[test]
     fn generated_at_matches_the_oracle_manifest() {
         // Pinned against Date.parse of the oracle manifest timestamp.
-        assert_eq!(generated_at(), Some(1_787_987_550_149));
+        assert_eq!(generated_at(), Some(1_788_598_939_155));
         assert_eq!(parse_rfc3339_millis("not a date"), None);
         assert_eq!(
             parse_rfc3339_millis("2026-08-29T07:12:30Z"),

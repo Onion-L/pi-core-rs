@@ -87,6 +87,69 @@ pub async fn collect_text(response: HttpResponse) -> String {
     String::from_utf8_lossy(&response.bytes().await.unwrap_or_default()).to_string()
 }
 
+/// Also polls cancellation while a server is not producing body chunks.
+pub(crate) fn abortable_body(
+    body: BoxStream<'static, Result<Bytes, HttpFetchError>>,
+    signal: Option<tokio_util::sync::CancellationToken>,
+) -> BoxStream<'static, Result<Bytes, HttpFetchError>> {
+    use futures::StreamExt;
+    let Some(signal) = signal else { return body };
+    Box::pin(futures::stream::unfold(
+        Some((body, signal)),
+        |state| async {
+            let (mut body, signal) = state?;
+            tokio::select! {
+                biased;
+                () = signal.cancelled() => Some((Err(HttpFetchError::Cancelled), None)),
+                chunk = body.next() => chunk.map(|chunk| (chunk, Some((body, signal)))),
+            }
+        },
+    ))
+}
+
+/// Buffers only an incomplete frame. Decode UTF-8 after finding a complete
+/// ASCII separator so split code points survive arbitrary chunk boundaries.
+pub(crate) fn text_frames(
+    body: BoxStream<'static, Result<Bytes, HttpFetchError>>,
+    separators: &'static [&'static str],
+) -> BoxStream<'static, Result<String, HttpFetchError>> {
+    use futures::StreamExt;
+    Box::pin(futures::stream::unfold(
+        (body, Vec::<u8>::new(), false),
+        move |(mut body, mut buffer, mut done)| async move {
+            loop {
+                let boundary = separators
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(order, separator)| {
+                        buffer
+                            .windows(separator.len())
+                            .position(|bytes| bytes == separator.as_bytes())
+                            .map(|index| (index, order, separator.len()))
+                    })
+                    .min();
+                if let Some((index, _, length)) = boundary {
+                    let frame = String::from_utf8_lossy(&buffer[..index]).into_owned();
+                    buffer.drain(..index + length);
+                    return Some((Ok(frame), (body, buffer, done)));
+                }
+                if done {
+                    if buffer.is_empty() {
+                        return None;
+                    }
+                    let frame = String::from_utf8_lossy(&buffer).into_owned();
+                    return Some((Ok(frame), (body, Vec::new(), true)));
+                }
+                match body.next().await {
+                    Some(Ok(chunk)) => buffer.extend_from_slice(&chunk),
+                    Some(Err(error)) => return Some((Err(error), (body, Vec::new(), true))),
+                    None => done = true,
+                }
+            }
+        },
+    ))
+}
+
 /// Errors surfaced by the HTTP transport.
 #[derive(Debug)]
 pub enum HttpFetchError {

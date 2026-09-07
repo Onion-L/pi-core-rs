@@ -292,6 +292,7 @@ fn excludes_retired_and_redundant_models_from_the_builtin_catalog() {
         "grok-3-fast",
         "grok-4.20-0309-non-reasoning",
         "grok-4.20-0309-reasoning",
+        "grok-build-0.1",
         "grok-code-fast-1",
     ] {
         assert!(
@@ -327,14 +328,6 @@ fn routes_every_builtin_xai_model_through_responses() {
         get_supported_thinking_levels(&xai_model("grok-4.3")),
         vec![
             ModelThinkingLevel::Off,
-            ModelThinkingLevel::Low,
-            ModelThinkingLevel::Medium,
-            ModelThinkingLevel::High,
-        ]
-    );
-    assert_eq!(
-        get_supported_thinking_levels(&xai_model("grok-build-0.1")),
-        vec![
             ModelThinkingLevel::Low,
             ModelThinkingLevel::Medium,
             ModelThinkingLevel::High,

@@ -231,37 +231,50 @@ fn refresh_models_routes(
     )
 }
 
+/// Mirrors the TS `requireModelId(providerModels, index)` helper: model ids
+/// come from the generated github-copilot catalog so upstream catalog
+/// refreshes do not break these tests.
+fn provider_model_id(index: usize) -> String {
+    pi_core::ai::models_generated::models_for_provider("github-copilot")[index]
+        .id
+        .clone()
+}
+
 #[tokio::test]
 async fn filters_models_to_the_authenticated_account_picker_catalog() {
+    let picker_model_id = provider_model_id(0);
+    let disabled_model_id = provider_model_id(1);
+    let hidden_model_id = provider_model_id(2);
     let (fetch, _) = refresh_models_routes(
         serde_json::json!([
-            { "id": "gpt-4.1", "model_picker_enabled": true, "capabilities": { "supports": { "tool_calls": true } } },
-            { "id": "claude-opus-4.7", "model_picker_enabled": true, "policy": { "state": "disabled" }, "capabilities": { "supports": { "tool_calls": true } } },
-            { "id": "gpt-5.4-nano", "model_picker_enabled": false, "policy": { "state": "enabled" }, "capabilities": { "supports": { "tool_calls": true } } },
+            { "id": picker_model_id.clone(), "model_picker_enabled": true, "capabilities": { "supports": { "tool_calls": true } } },
+            { "id": disabled_model_id, "model_picker_enabled": true, "policy": { "state": "disabled" }, "capabilities": { "supports": { "tool_calls": true } } },
+            { "id": hidden_model_id, "model_picker_enabled": false, "policy": { "state": "enabled" }, "capabilities": { "supports": { "tool_calls": true } } },
         ]),
         "proxy.individual.githubcopilot.com",
     );
 
     let credentials = refresh(Arc::clone(&fetch)).await.unwrap();
 
-    assert_eq!(available_model_ids(&credentials), vec!["gpt-4.1"]);
+    assert_eq!(available_model_ids(&credentials), vec![picker_model_id]);
 }
 
 #[tokio::test]
 async fn falls_back_to_explicitly_enabled_policy_models_when_picker_is_empty() {
+    let enabled_model_id = provider_model_id(0);
     let (fetch, _) = refresh_models_routes(
         serde_json::json!([
-            { "id": "gpt-4.1", "model_picker_enabled": false, "policy": { "state": "enabled" }, "capabilities": { "supports": { "tool_calls": true } } },
-            { "id": "claude-opus-4.7", "model_picker_enabled": false, "policy": { "state": "disabled" }, "capabilities": { "supports": { "tool_calls": true } } },
-            { "id": "gpt-5.4-nano", "model_picker_enabled": false, "capabilities": { "supports": { "tool_calls": true } } },
-            { "id": "gpt-4o", "model_picker_enabled": false, "policy": { "state": "enabled" }, "capabilities": { "supports": { "tool_calls": false } } },
+            { "id": enabled_model_id.clone(), "model_picker_enabled": false, "policy": { "state": "enabled" }, "capabilities": { "supports": { "tool_calls": true } } },
+            { "id": "policy-disabled-model", "model_picker_enabled": false, "policy": { "state": "disabled" }, "capabilities": { "supports": { "tool_calls": true } } },
+            { "id": "unconfigured-model", "model_picker_enabled": false, "capabilities": { "supports": { "tool_calls": true } } },
+            { "id": "tool-incapable-model", "model_picker_enabled": false, "policy": { "state": "enabled" }, "capabilities": { "supports": { "tool_calls": false } } },
         ]),
         "proxy.individual.githubcopilot.com",
     );
 
     let credentials = refresh(Arc::clone(&fetch)).await.unwrap();
 
-    assert_eq!(available_model_ids(&credentials), vec!["gpt-4.1"]);
+    assert_eq!(available_model_ids(&credentials), vec![enabled_model_id]);
 }
 
 #[tokio::test]
@@ -357,16 +370,20 @@ async fn reports_device_code_details_through_notify() {
 
 #[tokio::test(start_paused = true)]
 async fn updates_only_known_tool_capable_unconfigured_account_model_policies() {
+    let configured_model_id = provider_model_id(0);
+    let unconfigured_model_id = provider_model_id(1);
+    let tool_incapable_model_id = provider_model_id(2);
+    let expected_unconfigured = unconfigured_model_id.clone();
     let policy_model_ids = Arc::new(Mutex::new(Vec::new()));
     let policy_for_handler = Arc::clone(&policy_model_ids);
     let fetch = Arc::new(ScriptedFetch {
         handler: login_routes(
-            Arc::new(|| {
+            Arc::new(move || {
                 json_reply(serde_json::json!({"data": [
-                    { "id": "gpt-4.1", "model_picker_enabled": true, "policy": { "state": "enabled" }, "capabilities": { "supports": { "tool_calls": true } } },
-                    { "id": "claude-sonnet-4.5", "model_picker_enabled": true, "policy": { "state": "unconfigured" }, "capabilities": { "supports": { "tool_calls": true } } },
+                    { "id": configured_model_id, "model_picker_enabled": true, "policy": { "state": "enabled" }, "capabilities": { "supports": { "tool_calls": true } } },
+                    { "id": unconfigured_model_id, "model_picker_enabled": true, "policy": { "state": "unconfigured" }, "capabilities": { "supports": { "tool_calls": true } } },
                     { "id": "remote-only-model", "model_picker_enabled": true, "policy": { "state": "unconfigured" }, "capabilities": { "supports": { "tool_calls": true } } },
-                    { "id": "gpt-5.4", "model_picker_enabled": true, "policy": { "state": "unconfigured" }, "capabilities": { "supports": { "tool_calls": false } } },
+                    { "id": tool_incapable_model_id, "model_picker_enabled": true, "policy": { "state": "unconfigured" }, "capabilities": { "supports": { "tool_calls": false } } },
                 ]}))
             }),
             Some(Arc::new(move |model_id| {
@@ -384,7 +401,7 @@ async fn updates_only_known_tool_capable_unconfigured_account_model_policies() {
 
     assert_eq!(
         policy_model_ids.lock().unwrap().as_slice(),
-        ["claude-sonnet-4.5"]
+        [expected_unconfigured]
     );
     // The catalog was requested exactly once.
     let catalog_requests = fetch
@@ -399,13 +416,14 @@ async fn updates_only_known_tool_capable_unconfigured_account_model_policies() {
 
 #[tokio::test(start_paused = true)]
 async fn retries_a_throttled_policy_update_after_retry_after() {
+    let model_id = provider_model_id(0);
     let policy_request_count = Arc::new(Mutex::new(0u32));
     let count_for_handler = Arc::clone(&policy_request_count);
     let fetch = Arc::new(ScriptedFetch {
         handler: login_routes(
-            Arc::new(|| {
+            Arc::new(move || {
                 json_reply(serde_json::json!({"data": [
-                    { "id": "claude-sonnet-4.5", "model_picker_enabled": true, "policy": { "state": "unconfigured" } },
+                    { "id": model_id, "model_picker_enabled": true, "policy": { "state": "unconfigured" } },
                 ]}))
             }),
             Some(Arc::new(move |_| {
@@ -428,15 +446,20 @@ async fn retries_a_throttled_policy_update_after_retry_after() {
 
 #[tokio::test(start_paused = true)]
 async fn continues_policy_updates_after_a_transport_failure() {
+    let model_ids = [provider_model_id(0), provider_model_id(1)];
+    let ids_for_catalog = model_ids.clone();
     let policy_model_ids = Arc::new(Mutex::new(Vec::new()));
     let policy_for_handler = Arc::clone(&policy_model_ids);
     let fetch = Arc::new(ScriptedFetch {
         handler: login_routes(
-            Arc::new(|| {
-                json_reply(serde_json::json!({"data": [
-                    { "id": "gpt-4.1", "model_picker_enabled": true, "policy": { "state": "unconfigured" } },
-                    { "id": "claude-sonnet-4.5", "model_picker_enabled": true, "policy": { "state": "unconfigured" } },
-                ]}))
+            Arc::new(move || {
+                let data: Vec<serde_json::Value> = ids_for_catalog
+                    .iter()
+                    .map(|id| {
+                        serde_json::json!({ "id": id, "model_picker_enabled": true, "policy": { "state": "unconfigured" } })
+                    })
+                    .collect();
+                json_reply(serde_json::json!({"data": data}))
             }),
             Some(Arc::new(move |model_id| {
                 let mut requested = policy_for_handler.lock().unwrap();
@@ -454,10 +477,7 @@ async fn continues_policy_updates_after_a_transport_failure() {
 
     let result = login(Arc::clone(&fetch)).await;
 
-    assert_eq!(
-        policy_model_ids.lock().unwrap().as_slice(),
-        ["gpt-4.1", "claude-sonnet-4.5"]
-    );
+    assert_eq!(policy_model_ids.lock().unwrap().as_slice(), model_ids);
     assert!(result.is_ok(), "{result:?}");
 }
 
@@ -718,16 +738,22 @@ async fn copilot_models_with_credential(
 
 #[tokio::test]
 async fn get_available_filters_models_to_the_authenticated_account_picker_catalog() {
+    let picker_model_id = provider_model_id(0);
+    let disabled_model_id = provider_model_id(1);
+    let hidden_model_id = provider_model_id(2);
     let (fetch, _) = refresh_models_routes(
         serde_json::json!([
-            { "id": "gpt-4.1", "model_picker_enabled": true, "capabilities": { "supports": { "tool_calls": true } } },
-            { "id": "claude-opus-4.7", "model_picker_enabled": true, "policy": { "state": "disabled" }, "capabilities": { "supports": { "tool_calls": true } } },
-            { "id": "gpt-5.4-nano", "model_picker_enabled": false, "policy": { "state": "enabled" }, "capabilities": { "supports": { "tool_calls": true } } },
+            { "id": picker_model_id.clone(), "model_picker_enabled": true, "capabilities": { "supports": { "tool_calls": true } } },
+            { "id": disabled_model_id, "model_picker_enabled": true, "policy": { "state": "disabled" }, "capabilities": { "supports": { "tool_calls": true } } },
+            { "id": hidden_model_id, "model_picker_enabled": false, "policy": { "state": "enabled" }, "capabilities": { "supports": { "tool_calls": true } } },
         ]),
         "proxy.individual.githubcopilot.com",
     );
     let credentials = refresh(Arc::clone(&fetch)).await.unwrap();
-    assert_eq!(available_model_ids(&credentials), vec!["gpt-4.1"]);
+    assert_eq!(
+        available_model_ids(&credentials),
+        vec![picker_model_id.clone()]
+    );
 
     let models = copilot_models_with_credential(credentials).await;
     let available = models
@@ -735,22 +761,26 @@ async fn get_available_filters_models_to_the_authenticated_account_picker_catalo
         .await
         .unwrap();
     let ids: Vec<&str> = available.iter().map(|model| model.id.as_str()).collect();
-    assert_eq!(ids, vec!["gpt-4.1"]);
+    assert_eq!(ids, vec![picker_model_id.as_str()]);
 }
 
 #[tokio::test]
 async fn get_available_falls_back_to_explicitly_enabled_policy_models() {
+    let enabled_model_id = provider_model_id(0);
     let (fetch, _) = refresh_models_routes(
         serde_json::json!([
-            { "id": "gpt-4.1", "model_picker_enabled": false, "policy": { "state": "enabled" }, "capabilities": { "supports": { "tool_calls": true } } },
-            { "id": "claude-opus-4.7", "model_picker_enabled": false, "policy": { "state": "disabled" }, "capabilities": { "supports": { "tool_calls": true } } },
-            { "id": "gpt-5.4-nano", "model_picker_enabled": false, "capabilities": { "supports": { "tool_calls": true } } },
-            { "id": "gpt-4o", "model_picker_enabled": false, "policy": { "state": "enabled" }, "capabilities": { "supports": { "tool_calls": false } } },
+            { "id": enabled_model_id.clone(), "model_picker_enabled": false, "policy": { "state": "enabled" }, "capabilities": { "supports": { "tool_calls": true } } },
+            { "id": "policy-disabled-model", "model_picker_enabled": false, "policy": { "state": "disabled" }, "capabilities": { "supports": { "tool_calls": true } } },
+            { "id": "unconfigured-model", "model_picker_enabled": false, "capabilities": { "supports": { "tool_calls": true } } },
+            { "id": "tool-incapable-model", "model_picker_enabled": false, "policy": { "state": "enabled" }, "capabilities": { "supports": { "tool_calls": false } } },
         ]),
         "proxy.individual.githubcopilot.com",
     );
     let credentials = refresh(Arc::clone(&fetch)).await.unwrap();
-    assert_eq!(available_model_ids(&credentials), vec!["gpt-4.1"]);
+    assert_eq!(
+        available_model_ids(&credentials),
+        vec![enabled_model_id.clone()]
+    );
 
     let models = copilot_models_with_credential(credentials).await;
     let available = models
@@ -758,19 +788,22 @@ async fn get_available_falls_back_to_explicitly_enabled_policy_models() {
         .await
         .unwrap();
     let ids: Vec<&str> = available.iter().map(|model| model.id.as_str()).collect();
-    assert_eq!(ids, vec!["gpt-4.1"]);
+    assert_eq!(ids, vec![enabled_model_id.as_str()]);
 }
 
 #[tokio::test(start_paused = true)]
 async fn stops_policy_updates_and_persists_authentication_when_the_retry_delay_exceeds_the_login_budget()
  {
+    let first_model_id = provider_model_id(0);
+    let second_model_id = provider_model_id(1);
+    let expected_first = first_model_id.clone();
     let policy_model_ids = Arc::new(Mutex::new(Vec::<String>::new()));
     let ids = Arc::clone(&policy_model_ids);
     let handler = login_routes(
-        Arc::new(|| {
+        Arc::new(move || {
             json_reply(serde_json::json!({"data": [
-                { "id": "gpt-4.1", "model_picker_enabled": true, "policy": { "state": "unconfigured" } },
-                { "id": "claude-sonnet-4.5", "model_picker_enabled": true, "policy": { "state": "unconfigured" } },
+                { "id": first_model_id, "model_picker_enabled": true, "policy": { "state": "unconfigured" } },
+                { "id": second_model_id, "model_picker_enabled": true, "policy": { "state": "unconfigured" } },
             ]}))
         }),
         Some(Arc::new(move |model_id| {
@@ -837,7 +870,7 @@ async fn stops_policy_updates_and_persists_authentication_when_the_retry_delay_e
         panic!("expected an OAuth credential, got {credential:?}");
     };
     assert_eq!(oauth.access, TEST_COPILOT_ACCESS_TOKEN);
-    assert_eq!(*policy_model_ids.lock().unwrap(), vec!["gpt-4.1"]);
+    assert_eq!(*policy_model_ids.lock().unwrap(), vec![expected_first]);
     assert_eq!(
         store.read("github-copilot", None).await.unwrap(),
         Some(credential)

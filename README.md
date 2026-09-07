@@ -63,7 +63,7 @@ handling, deferred responses, prompt-cache metadata, and usage accounting.
 
 ### Requirements
 
-- Rust 1.85 or newer
+- Rust 1.88 or newer
 - Network access only for live provider requests or OAuth flows
 - Node.js 22.19 or newer only when running the TypeScript oracle suites
 
@@ -223,6 +223,21 @@ cargo test --all-targets
 cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
 ```
+
+For a deterministic run without live API calls, OAuth credential reads or
+refreshes, or local model servers, use `PI_TEST_OFFLINE=1 cargo test --all-targets`.
+Live scenarios remain visible as skipped cases; run without this variable to
+exercise them with configured credentials.
+
+Before regenerating fixtures or claiming upstream parity, verify the restored
+TypeScript oracle and its exports (requires the oracle's Node dependencies):
+
+```bash
+bash scripts/verify-oracle.sh
+node scripts/audit/export-parity.mjs
+```
+
+A passing Rust test suite alone does not detect a changed TypeScript snapshot.
 
 Provider integration tests are credential-gated and skip cleanly when the
 required credentials are absent. The full port status and documented runtime

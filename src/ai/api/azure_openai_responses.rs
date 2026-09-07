@@ -511,23 +511,23 @@ async fn run_stream(
         partial: output.clone(),
     });
 
-    let mut sse = crate::ai::utils::sse::SseStream::new(response.body);
-    let mut events: Vec<Value> = Vec::new();
-    while let Some(sse_event) = futures::StreamExt::next(&mut sse).await {
+    let sse = crate::ai::utils::sse::SseStream::with_signal(
+        response.body,
+        options.and_then(|options| options.base.base.signal.clone()),
+    );
+    let events = futures::StreamExt::filter_map(sse, |sse_event| async move {
         if sse_event.event.as_deref() == Some("__error__") {
-            return Err(sse_event.data);
+            return Some(Err(sse_event.data));
         }
-        if let Ok(event) = serde_json::from_str::<Value>(&sse_event.data) {
-            events.push(event);
-        }
-    }
+        serde_json::from_str::<Value>(&sse_event.data).ok().map(Ok)
+    });
 
     let stream_options = ResponsesStreamOptions {
         grammar_tool_input_properties: Some(grammar_tool_input_properties),
         ..Default::default()
     };
     process_responses_stream(
-        futures::stream::iter(events.into_iter().map(Ok::<serde_json::Value, String>)),
+        Box::pin(events),
         output,
         producer,
         model,
