@@ -30,12 +30,13 @@ fn pi_user_agent() -> String {
     get_pi_user_agent()
 }
 
-/// Guard mirroring the TS constant's shape `pi (<platform> <release>; <arch>)`,
-/// then equality with pi's user agent.
+/// Guard mirroring the user agent shape `pi-core-rs (<platform> <release>;
+/// <arch>)` (deliberately prefixed `pi-core-rs` instead of upstream `pi`),
+/// then equality with the helper's value.
 fn assert_is_pi_user_agent(value: Option<&str>) {
     let value = value.expect("user-agent header present");
     assert!(
-        value.starts_with(&format!("pi ({} ", std::env::consts::OS)),
+        value.starts_with(&format!("pi-core-rs ({} ", std::env::consts::OS)),
         "unexpected user-agent shape: {value}"
     );
     assert!(

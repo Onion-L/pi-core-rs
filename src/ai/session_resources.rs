@@ -60,10 +60,12 @@ pub fn cleanup_session_resources(session_id: Option<&str>) -> Result<(), String>
 
 /// Port of `getPiUserAgent` (utils/pi-user-agent.ts). The TypeScript version
 /// reads `node:os` platform/release/arch; Rust reads the compile-time target
-/// triple plus `std::env::consts`, producing the same `pi (...)` shape.
+/// triple plus `std::env::consts`. Deliberate deviation from upstream: the
+/// product prefix is `pi-core-rs` instead of `pi` so providers can tell the
+/// two clients apart.
 pub fn get_pi_user_agent() -> String {
     format!(
-        "pi ({} {}; {})",
+        "pi-core-rs ({} {}; {})",
         std::env::consts::OS,
         os_release(),
         std::env::consts::ARCH
@@ -138,7 +140,10 @@ mod tests {
     #[test]
     fn pi_user_agent_has_expected_shape() {
         let agent = get_pi_user_agent();
-        assert!(agent.starts_with("pi ("), "unexpected agent: {agent}");
+        assert!(
+            agent.starts_with("pi-core-rs ("),
+            "unexpected agent: {agent}"
+        );
         assert!(agent.ends_with(')'));
     }
 }
