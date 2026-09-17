@@ -147,6 +147,65 @@ async fn read_does_not_count_a_trailing_newline_as_an_extra_line_at_the_limit() 
     assert!(!text_output(&result).contains("Use offset="));
 }
 
+// Deliberate deviation from TypeScript v0.84.4 (see `ReadToolOptions`): the
+// read tool accepts configurable truncation limits. TypeScript hardcodes
+// 2000 lines / 50KB and leaves customization to extensions that replace the
+// tool (earendil-works/pi#7066). Defaults must stay byte-identical.
+#[tokio::test]
+async fn read_honors_configurable_truncation_limits_and_defaults_unchanged() {
+    let root = common::create_temp_dir();
+    let context = context_for(&root);
+    let content = (1..=10)
+        .map(|index| format!("0123456789-{index}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    write_file(env_of(&context), "sized.txt", &content).await;
+
+    // Line limit override.
+    let tool = create_read_tool(ReadToolOptions {
+        max_lines: Some(3),
+        max_bytes: Some(64 * 1024),
+        ..Default::default()
+    });
+    let result = run(&tool, json!({ "path": "sized.txt" }), &context)
+        .await
+        .unwrap();
+    let output = text_output(&result);
+    assert!(output.contains("[Showing lines 1-3 of 10. Use offset=4 to continue.]"));
+    assert_eq!(result.details["truncation"]["maxLines"], json!(3));
+    assert_eq!(result.details["truncation"]["maxBytes"], json!(64 * 1024));
+    assert!(tool.description.contains("truncated to 3 lines or 64KB"));
+
+    // Byte limit override: each "0123456789-N" line is 12-13 bytes plus the
+    // joining newline, so 25 bytes keeps exactly the first two lines.
+    let tool = create_read_tool(ReadToolOptions {
+        max_bytes: Some(25),
+        ..Default::default()
+    });
+    let result = run(&tool, json!({ "path": "sized.txt" }), &context)
+        .await
+        .unwrap();
+    let output = text_output(&result);
+    assert!(output.contains("[Showing lines 1-2 of 10 (25B limit). Use offset=3 to continue.]"));
+    assert_eq!(result.details["truncation"]["truncatedBy"], json!("bytes"));
+
+    // Defaults are untouched: the same file reads in full with no notices.
+    let result = run(
+        &create_read_tool(ReadToolOptions::default()),
+        json!({ "path": "sized.txt" }),
+        &context,
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.details, serde_json::Value::Null);
+    assert_eq!(text_output(&result), content);
+    assert!(
+        !create_read_tool(ReadToolOptions::default())
+            .description
+            .contains("truncated to 3 lines")
+    );
+}
+
 #[tokio::test]
 async fn read_rejects_offsets_beyond_the_file() {
     let root = common::create_temp_dir();
@@ -322,6 +381,114 @@ async fn edit_rejects_missing_and_duplicate_target_text() {
     .await
     .unwrap_err();
     assert!(error.contains("Found 3 occurrences"), "{error}");
+}
+
+// Deliberate deviation from TypeScript v0.84.4 (see the diagnostics block in
+// `edit_diff.rs`): when an oldText is not found, the Rust error appends the
+// closest candidate region so the model can self-correct in one retry. When
+// nothing is close, the message stays byte-identical to TypeScript.
+#[tokio::test]
+async fn edit_not_found_includes_closest_candidate_hint() {
+    let root = common::create_temp_dir();
+    let context = context_for(&root);
+    write_file(
+        env_of(&context),
+        "indent.rs",
+        "fn main() {\n    let a = 1;\n    let b = 2;\n}\n",
+    )
+    .await;
+
+    // Classic model failure: oldText uses tabs where the file has 4-space
+    // indentation. Neither exact nor fuzzy matching tolerates that.
+    let error = run(
+        &create_edit_tool(),
+        json!({ "path": "indent.rs", "edits": [
+            { "oldText": "\tlet a = 1;\n\tlet b = 2;\n", "newText": "\tlet a = 2;\n\tlet b = 3;\n" }
+        ]}),
+        &context,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(
+        error.starts_with(
+            "Could not find the exact text in indent.rs. The old text must match exactly including all whitespace and newlines."
+        ),
+        "unexpected error: {error}"
+    );
+    assert!(
+        error.contains("The closest match in the file is around lines 2-3:"),
+        "{error}"
+    );
+    assert!(error.contains("2 |     let a = 1;"), "{error}");
+    assert!(error.contains("3 |     let b = 2;"), "{error}");
+    assert!(error.contains("Re-read that region"), "{error}");
+    assert_eq!(
+        env_of(&context)
+            .read_text_file("indent.rs", None)
+            .await
+            .unwrap(),
+        "fn main() {\n    let a = 1;\n    let b = 2;\n}\n"
+    );
+}
+
+#[tokio::test]
+async fn edit_not_found_without_a_close_candidate_is_byte_identical_to_typescript() {
+    let root = common::create_temp_dir();
+    let context = context_for(&root);
+    write_file(env_of(&context), "edit.txt", "foo foo foo").await;
+
+    let error = run(
+        &create_edit_tool(),
+        json!({ "path": "edit.txt", "edits": [{ "oldText": "unrelated zebra", "newText": "x" }] }),
+        &context,
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(
+        error,
+        "Could not find the exact text in edit.txt. The old text must match exactly including all whitespace and newlines."
+    );
+}
+
+#[tokio::test]
+async fn edit_not_found_diagnoses_sequential_edit_assumption() {
+    let root = common::create_temp_dir();
+    let context = context_for(&root);
+    write_file(env_of(&context), "edit.txt", "one\ntwo\nthree\n").await;
+
+    // edits[1] was written assuming edits[0] had already been applied.
+    let error = run(
+        &create_edit_tool(),
+        json!({ "path": "edit.txt", "edits": [
+            { "oldText": "one\n", "newText": "ONE\n" },
+            { "oldText": "ONE\ntwo\n", "newText": "ONE\nTWO\n" }
+        ]}),
+        &context,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(
+        error.starts_with(
+            "Could not find edits[1] in edit.txt. The oldText must match exactly including all whitespace and newlines."
+        ),
+        "unexpected error: {error}"
+    );
+    assert!(
+        error.contains(
+            "edits[1].oldText matches only after edits[0..1] are applied in order, but every edit is matched against the same original file content"
+        ),
+        "unexpected error: {error}"
+    );
+    assert!(error.contains("Merge the dependent edits"), "{error}");
+    assert_eq!(
+        env_of(&context)
+            .read_text_file("edit.txt", None)
+            .await
+            .unwrap(),
+        "one\ntwo\nthree\n"
+    );
 }
 
 #[tokio::test]
@@ -1003,6 +1170,7 @@ async fn read_delegates_image_conversion_and_resizing_to_an_injected_processor()
                 }
             })
         })),
+        ..Default::default()
     });
 
     let result = run(&tool, json!({ "path": "image.bmp" }), &context)

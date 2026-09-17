@@ -259,6 +259,141 @@ fn not_found_error(path: &str, edit_index: usize, total_edits: usize) -> String 
     }
 }
 
+// Deliberate deviation from TypeScript v0.84.4: `applyEditsToNormalizedContent`
+// throws the bare `getNotFoundError` message above. The Rust port appends
+// failure-path diagnostics — a sequential-edit-dependency diagnosis and the
+// closest candidate region — so the model can recover in one retry instead of
+// re-reading the file and guessing. Success-path behavior (which edits apply,
+// resulting content, all other error strings) is unchanged; when no diagnostic
+// fires the error string is byte-identical to TypeScript. Focused tests in
+// `tests/harness_tools.rs` pin both the enriched and the bare messages.
+
+/// Upper bound on sliding-window positions scored by the candidate hint; past
+/// this the hint is skipped rather than paying a full extra scan of a huge file.
+const MAX_CANDIDATE_WINDOWS: usize = 100_000;
+const CANDIDATE_PROBE_LINES: usize = 3;
+const CANDIDATE_MIN_SIMILARITY: f64 = 0.6;
+const CANDIDATE_MAX_LINE_CHARS: usize = 200;
+
+/// Multiset similarity of two lines (sorted-byte intersection over the longer
+/// length). Order-insensitive by design: the hint must still locate the region
+/// when only the ordering within a line or its indentation differs.
+fn line_similarity(a: &str, b: &str) -> f64 {
+    let a = a.as_bytes();
+    let b = b.as_bytes();
+    if a.is_empty() && b.is_empty() {
+        return 1.0;
+    }
+    let mut sorted_a = a.to_vec();
+    let mut sorted_b = b.to_vec();
+    sorted_a.sort_unstable();
+    sorted_b.sort_unstable();
+    let mut common = 0usize;
+    let mut i = 0;
+    let mut j = 0;
+    while i < sorted_a.len() && j < sorted_b.len() {
+        match sorted_a[i].cmp(&sorted_b[j]) {
+            std::cmp::Ordering::Equal => {
+                common += 1;
+                i += 1;
+                j += 1;
+            }
+            std::cmp::Ordering::Less => i += 1,
+            std::cmp::Ordering::Greater => j += 1,
+        }
+    }
+    common as f64 / a.len().max(b.len()) as f64
+}
+
+/// Locate the region of `base_content` most similar to the head of `old_text`
+/// and render it as a hint, or `None` when nothing is close enough to point at.
+fn closest_candidate_hint(base_content: &str, old_text: &str) -> Option<String> {
+    let probe: Vec<&str> = old_text
+        .split('\n')
+        .filter(|line| !line.trim().is_empty())
+        .take(CANDIDATE_PROBE_LINES)
+        .collect();
+    if probe.is_empty() {
+        return None;
+    }
+    let lines: Vec<&str> = base_content.split('\n').collect();
+    if lines.len() < probe.len() || lines.len() + 1 - probe.len() > MAX_CANDIDATE_WINDOWS {
+        return None;
+    }
+
+    let mut best_start = 0;
+    let mut best_score = 0.0;
+    for start in 0..=(lines.len() - probe.len()) {
+        let score = probe
+            .iter()
+            .enumerate()
+            .map(|(offset, probe_line)| line_similarity(probe_line, lines[start + offset]))
+            .sum::<f64>()
+            / probe.len() as f64;
+        if score > best_score {
+            best_score = score;
+            best_start = start;
+        }
+    }
+    if best_score < CANDIDATE_MIN_SIMILARITY {
+        return None;
+    }
+
+    // Display exactly the matched window so the reported line range is the
+    // region that scored best, not an arbitrary number of surrounding lines.
+    let shown = probe.len();
+    let first_line = best_start + 1;
+    let last_line = first_line + shown - 1;
+    let mut hint =
+        format!("The closest match in the file is around lines {first_line}-{last_line}:");
+    for (offset, line) in lines.iter().skip(best_start).take(shown).enumerate() {
+        let display: String = line.chars().take(CANDIDATE_MAX_LINE_CHARS).collect();
+        hint.push_str(&format!("\n  {} | {display}", first_line + offset));
+    }
+    hint.push_str(
+        "\nRe-read that region with the read tool and copy the text exactly, including indentation and newlines.",
+    );
+    Some(hint)
+}
+
+/// Detect that `edits[edit_index]` was written against the result of applying
+/// `edits[0..edit_index]` in order, rather than against the original content.
+/// `None` when the hypothesis does not hold exactly.
+fn sequential_edits_diagnostic(
+    base_content: &str,
+    edits: &[Edit],
+    edit_index: usize,
+) -> Option<String> {
+    if edit_index == 0 {
+        return None;
+    }
+    let mut current = base_content.to_string();
+    for edit in &edits[..edit_index] {
+        let index = current.find(edit.old_text.as_str())?;
+        current.replace_range(index..index + edit.old_text.len(), &edit.new_text);
+    }
+    current.find(edits[edit_index].old_text.as_str())?;
+    Some(format!(
+        "edits[{edit_index}].oldText matches only after edits[0..{edit_index}] are applied in order, but every edit is matched against the same original file content, not the result of earlier edits. Merge the dependent edits into one edit whose oldText comes from the original file, or apply them in separate edit calls."
+    ))
+}
+
+fn not_found_error_with_diagnostics(
+    base_content: &str,
+    edits: &[Edit],
+    edit_index: usize,
+    path: &str,
+) -> String {
+    let base = not_found_error(path, edit_index, edits.len());
+    if let Some(diagnostic) = sequential_edits_diagnostic(base_content, edits, edit_index) {
+        return format!("{base} {diagnostic}");
+    }
+    if let Some(hint) = closest_candidate_hint(base_content, &edits[edit_index].old_text) {
+        return format!("{base} {hint}");
+    }
+    base
+}
+
 fn duplicate_error(
     path: &str,
     edit_index: usize,
@@ -334,7 +469,12 @@ pub fn apply_edits_to_normalized_content(
     for (index, edit) in normalized_edits.iter().enumerate() {
         let match_result = fuzzy_find_text(&replacement_base_content, &edit.old_text);
         if !match_result.found {
-            return Err(not_found_error(path, index, normalized_edits.len()));
+            return Err(not_found_error_with_diagnostics(
+                &replacement_base_content,
+                &normalized_edits,
+                index,
+                path,
+            ));
         }
         let occurrences = count_occurrences(&replacement_base_content, &edit.old_text);
         if occurrences > 1 {

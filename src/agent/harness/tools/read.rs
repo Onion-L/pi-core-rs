@@ -57,20 +57,31 @@ pub type ReadImageProcessor = Arc<
 >;
 
 /// Port of `ReadToolOptions`.
+///
+/// Deviation from TypeScript v0.84.4: `max_lines`/`max_bytes` override the
+/// read tool's truncation limits (TypeScript hardcodes `DEFAULT_MAX_LINES`
+/// and `DEFAULT_MAX_BYTES`; upstream keeps customization to extensions that
+/// replace the tool — e.g. earendil-works/pi#7066). Both default to `None`,
+/// which reproduces the TypeScript behavior byte-for-byte, limits and
+/// truncation messages included. Focused tests in `tests/harness_tools.rs`.
 #[derive(Clone, Default)]
 pub struct ReadToolOptions {
     pub auto_resize_images: Option<bool>,
     pub image_processor: Option<ReadImageProcessor>,
+    pub max_lines: Option<usize>,
+    pub max_bytes: Option<usize>,
 }
 
 /// Port of `createReadTool`.
 pub fn create_read_tool(
     options: ReadToolOptions,
 ) -> crate::agent::harness::types::AgentHarnessTool {
+    let max_lines = options.max_lines.unwrap_or(DEFAULT_MAX_LINES);
+    let max_bytes = options.max_bytes.unwrap_or(DEFAULT_MAX_BYTES);
     let description = format!(
         "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to {} lines or {}KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
-        DEFAULT_MAX_LINES,
-        DEFAULT_MAX_BYTES / 1024
+        max_lines,
+        max_bytes / 1024
     );
     crate::agent::harness::types::AgentHarnessTool {
         name: "read".to_string(),
@@ -211,14 +222,20 @@ pub fn create_read_tool(
                         all_lines[start_line..].join("\n")
                     };
 
-                    let truncation = truncate_head(&selected_content, TruncationOptions::default());
+                    let truncation = truncate_head(
+                        &selected_content,
+                        TruncationOptions {
+                            max_lines: Some(max_lines),
+                            max_bytes: Some(max_bytes),
+                        },
+                    );
                     let mut details = serde_json::Value::Null;
                     let output_text;
                     if truncation.first_line_exceeds_limit {
                         let first_line_size = format_size(all_lines[start_line].len() as u64);
                         output_text = format!(
-                            "[Line {start_line_display} is {first_line_size}, exceeds {} limit. Use bash: sed -n '{start_line_display}p' {path} | head -c {DEFAULT_MAX_BYTES}]",
-                            format_size(DEFAULT_MAX_BYTES as u64)
+                            "[Line {start_line_display} is {first_line_size}, exceeds {} limit. Use bash: sed -n '{start_line_display}p' {path} | head -c {max_bytes}]",
+                            format_size(max_bytes as u64)
                         );
                         details = serde_json::json!({ "truncation": truncation });
                     } else if truncation.truncated {
@@ -232,7 +249,7 @@ pub fn create_read_tool(
                         } else {
                             text.push_str(&format!(
                                 "\n\n[Showing lines {start_line_display}-{end_line_display} of {total_file_lines} ({} limit). Use offset={next_offset} to continue.]",
-                                format_size(DEFAULT_MAX_BYTES as u64)
+                                format_size(max_bytes as u64)
                             ));
                         }
                         output_text = text;
