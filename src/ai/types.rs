@@ -1348,6 +1348,9 @@ pub struct ProviderRequestOptions {
     pub on_payload: Option<OnPayloadCallback>,
     /// Invoked after an HTTP response is received.
     pub on_response: Option<OnResponseCallback>,
+    /// Invoked before each provider-retry backoff sleep with (attempt
+    /// 1-indexed, max_retries, delay_ms, error message).
+    pub on_retry: Option<OnRetryCallback>,
     pub headers: Option<ProviderHeaders>,
     pub timeout_ms: Option<u64>,
     pub max_retries: Option<u32>,
@@ -1369,6 +1372,12 @@ pub type OnPayloadCallback = Arc<
 /// Port of the `onResponse` callback.
 pub type OnResponseCallback =
     Arc<dyn Fn(&ProviderResponse, &Model) -> futures::future::BoxFuture<'static, ()> + Send + Sync>;
+
+/// Port of the `onRetry` callback: fires once per scheduled provider retry,
+/// just before the backoff sleep, with the same argument shape as the
+/// harness-level `onRetryScheduled` (attempt 1-indexed, max_retries,
+/// delay_ms, previous error message).
+pub type OnRetryCallback = Arc<dyn Fn(u32, u32, u64, &str) + Send + Sync>;
 
 /// Port of the images `onPayload` callback (`ImagesOptions` flavor).
 pub type OnPayloadCallbackImages = Arc<
@@ -1398,6 +1407,9 @@ pub struct ImagesOptions {
     pub env: Option<ProviderEnv>,
     pub on_payload: Option<OnPayloadCallbackImages>,
     pub on_response: Option<OnResponseCallbackImages>,
+    /// Invoked before each provider-retry backoff sleep; see
+    /// [`ProviderRequestOptions::on_retry`].
+    pub on_retry: Option<OnRetryCallback>,
     pub headers: Option<ProviderHeaders>,
     pub timeout_ms: Option<u64>,
     pub max_retries: Option<u32>,

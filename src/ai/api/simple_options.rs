@@ -59,6 +59,7 @@ pub fn build_base_options(
             max_retry_delay_ms: options.base.base.max_retry_delay_ms,
             on_payload: options.base.base.on_payload.clone(),
             on_response: options.base.base.on_response.clone(),
+            on_retry: options.base.base.on_retry.clone(),
             ..Default::default()
         },
         temperature: options.base.temperature,

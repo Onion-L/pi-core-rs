@@ -47,6 +47,8 @@ impl std::error::Error for ProviderHttpError {}
 /// Port of `ProviderRetryOptions`.
 #[derive(Default)]
 pub struct ProviderRetryOptions {
+    /// Invoked before each retry's backoff sleep; `None` disables notification.
+    pub on_retry: Option<crate::ai::types::OnRetryCallback>,
     pub max_retries: Option<u32>,
     pub max_retry_delay_ms: Option<u64>,
     pub signal: Option<CancellationToken>,
@@ -181,6 +183,15 @@ where
         retries_remaining -= 1;
         let delay_ms = get_retry_delay_ms(&error, retry_index, options.max_retry_delay_ms, now_ms)
             .map_err(|message| ProviderHttpError::new(message, None, Vec::new()))?;
+
+        if let Some(on_retry) = options.on_retry.as_ref() {
+            on_retry(
+                retry_index + 1,
+                max_retries,
+                delay_ms.max(0.0) as u64,
+                &error.message,
+            );
+        }
 
         abortable_sleep_provider(delay_ms.max(0.0) as u64, options.signal.as_ref()).await?;
     }

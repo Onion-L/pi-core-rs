@@ -1611,6 +1611,7 @@ async fn run_stream(
             },
             crate::ai::utils::provider_retry::ProviderRetryOptions {
                 max_retries: Some(0),
+                on_retry: options.and_then(|options| options.base.base.on_retry.clone()),
                 max_retry_delay_ms: options
                     .and_then(|options| options.base.base.max_retry_delay_ms),
                 signal: signal.clone(),

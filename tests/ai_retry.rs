@@ -638,6 +638,7 @@ async fn provider_retry_aborts_a_provider_requested_retry_delay() {
                 }
             },
             ProviderRetryOptions {
+                on_retry: None,
                 max_retries: Some(2),
                 max_retry_delay_ms: Some(0),
                 signal: Some(controller),
@@ -649,6 +650,98 @@ async fn provider_retry_aborts_a_provider_requested_retry_delay() {
     let error = task.await.unwrap().unwrap_err();
     assert_eq!(error.message, "Request aborted");
     assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn provider_retry_notifies_on_retry_before_each_backoff() {
+    /// (attempt, max_retries, delay_ms, error message).
+    type RetryRecord = (u32, u32, u64, String);
+    let notices: Arc<Mutex<Vec<RetryRecord>>> = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&notices);
+    let calls = Arc::new(AtomicU32::new(0));
+    let task_calls = Arc::clone(&calls);
+    let result = retry_provider_request(
+        || {
+            let calls = Arc::clone(&task_calls);
+            async move {
+                let attempt = calls.fetch_add(1, Ordering::SeqCst);
+                if attempt < 2 {
+                    Err::<String, _>(provider_error(Some(503), &[]))
+                } else {
+                    Ok("ok".to_string())
+                }
+            }
+        },
+        ProviderRetryOptions {
+            on_retry: Some(Arc::new(move |attempt, max_retries, delay_ms, error| {
+                sink.lock()
+                    .unwrap()
+                    .push((attempt, max_retries, delay_ms, error.to_string()));
+            })),
+            max_retries: Some(3),
+            ..Default::default()
+        },
+    )
+    .await;
+
+    assert_eq!(result.unwrap(), "ok");
+    assert_eq!(calls.load(Ordering::SeqCst), 3);
+    let notices = notices.lock().unwrap();
+    assert_eq!(notices.len(), 2);
+    assert_eq!(notices[0].0, 1);
+    assert_eq!(notices[1].0, 2);
+    // Backoff is 0.5s then 1s with up to 25% downward jitter.
+    assert!(
+        (375..=500).contains(&notices[0].2),
+        "first delay {}",
+        notices[0].2
+    );
+    assert!(
+        (750..=1000).contains(&notices[1].2),
+        "second delay {}",
+        notices[1].2
+    );
+    for (_, max_retries, _, error) in notices.iter() {
+        assert_eq!(*max_retries, 3);
+        assert_eq!(error, &provider_error(Some(503), &[]).message);
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn provider_retry_does_not_notify_without_a_retry_or_on_non_retryable() {
+    let notices: Arc<Mutex<Vec<u32>>> = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&notices);
+    // Non-retryable status: the callback never fires and the error returns.
+    let result = retry_provider_request(
+        || async { Err::<String, _>(provider_error(Some(401), &[])) },
+        ProviderRetryOptions {
+            on_retry: Some(Arc::new(move |attempt, _, _, _| {
+                sink.lock().unwrap().push(attempt);
+            })),
+            max_retries: Some(3),
+            ..Default::default()
+        },
+    )
+    .await;
+    assert!(result.is_err());
+    assert!(notices.lock().unwrap().is_empty());
+
+    // Immediate success: no retry, no notification.
+    let notices: Arc<Mutex<Vec<u32>>> = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&notices);
+    let result = retry_provider_request(
+        || async { Ok::<String, _>("ok".to_string()) },
+        ProviderRetryOptions {
+            on_retry: Some(Arc::new(move |attempt, _, _, _| {
+                sink.lock().unwrap().push(attempt);
+            })),
+            max_retries: Some(3),
+            ..Default::default()
+        },
+    )
+    .await;
+    assert_eq!(result.unwrap(), "ok");
+    assert!(notices.lock().unwrap().is_empty());
 }
 
 #[test]

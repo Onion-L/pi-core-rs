@@ -105,6 +105,7 @@ async fn run_generation(
         },
         ProviderRetryOptions {
             max_retries: options.and_then(|options| options.max_retries),
+            on_retry: options.and_then(|options| options.on_retry.clone()),
             max_retry_delay_ms: options.and_then(|options| options.max_retry_delay_ms),
             signal: options.and_then(|options| options.signal.clone()),
         },

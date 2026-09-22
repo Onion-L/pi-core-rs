@@ -1804,6 +1804,7 @@ async fn request_completions(
         },
         crate::ai::utils::provider_retry::ProviderRetryOptions {
             max_retries: options.and_then(|options| options.base.base.max_retries),
+            on_retry: options.and_then(|options| options.base.base.on_retry.clone()),
             max_retry_delay_ms: options.and_then(|options| options.base.base.max_retry_delay_ms),
             signal: options.and_then(|options| options.base.base.signal.clone()),
         },
