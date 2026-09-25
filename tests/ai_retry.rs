@@ -6,8 +6,11 @@ use std::sync::{Arc, Mutex};
 
 use pi_core::ai::providers::faux::{FauxContent, FauxMessageOptions, faux_assistant_message};
 use pi_core::ai::types::{AssistantContent, StopReason, TextContent, Usage};
+use pi_core::ai::utils::http::{
+    HttpBody, HttpFetch, HttpFetchError, HttpMethod, HttpRequest, HttpResponse,
+};
 use pi_core::ai::utils::provider_retry::{
-    ProviderHttpError, ProviderRetryOptions, retry_provider_request,
+    ProviderHttpError, ProviderRetryOptions, retry_http_request, retry_provider_request,
 };
 use pi_core::ai::utils::retry::{
     RetryCallbacks, RetryPolicy, is_retryable_assistant_error, retry_assistant_call,
@@ -742,6 +745,143 @@ async fn provider_retry_does_not_notify_without_a_retry_or_on_non_retryable() {
     .await;
     assert_eq!(result.unwrap(), "ok");
     assert!(notices.lock().unwrap().is_empty());
+}
+
+/// One scripted (status, headers, body) response.
+type Scripted = (u16, Vec<(String, String)>, String);
+type ScriptedSpec<'a> = (u16, &'a [(&'a str, &'a str)], &'a str);
+
+/// Replays one scripted response per request; the last one repeats once the
+/// script runs out.
+struct ScriptedFetch {
+    responses: Vec<Scripted>,
+    calls: AtomicU32,
+}
+
+impl ScriptedFetch {
+    fn new(responses: &[ScriptedSpec]) -> Arc<Self> {
+        Arc::new(Self {
+            responses: responses
+                .iter()
+                .map(|(status, headers, body)| {
+                    (
+                        *status,
+                        headers
+                            .iter()
+                            .map(|(name, value)| (name.to_string(), value.to_string()))
+                            .collect(),
+                        body.to_string(),
+                    )
+                })
+                .collect(),
+            calls: AtomicU32::new(0),
+        })
+    }
+}
+
+impl HttpFetch for ScriptedFetch {
+    fn fetch<'a>(
+        &'a self,
+        _request: HttpRequest,
+    ) -> futures::future::BoxFuture<'a, Result<HttpResponse, HttpFetchError>> {
+        let index = self.calls.fetch_add(1, Ordering::SeqCst) as usize;
+        let (status, headers, body) = self.responses[index.min(self.responses.len() - 1)].clone();
+        Box::pin(async move {
+            Ok(HttpResponse {
+                status,
+                headers,
+                body: Box::pin(futures::stream::iter([Ok(bytes::Bytes::from(body))])),
+            })
+        })
+    }
+}
+
+async fn http_retry(
+    fetch: &Arc<ScriptedFetch>,
+    max_retries: u32,
+    notices: Option<Arc<Mutex<Vec<String>>>>,
+) -> Result<HttpResponse, ProviderHttpError> {
+    let dyn_fetch: Arc<dyn HttpFetch> = fetch.clone();
+    retry_http_request(
+        &dyn_fetch,
+        &HttpRequest {
+            method: HttpMethod::Post,
+            url: "https://provider.test".to_string(),
+            headers: Vec::new(),
+            body: HttpBody::Empty,
+            signal: None,
+        },
+        ProviderRetryOptions {
+            max_retries: Some(max_retries),
+            on_retry: notices.map(|sink| {
+                Arc::new(move |_: u32, _: u32, _: u64, error: &str| {
+                    sink.lock().unwrap().push(error.to_string());
+                }) as pi_core::ai::types::OnRetryCallback
+            }),
+            ..Default::default()
+        },
+    )
+    .await
+}
+
+#[tokio::test(start_paused = true)]
+async fn http_retry_retries_a_rate_limited_response_honoring_retry_after() {
+    let body = r#"{"type":"error","error":{"type":"rate_limit_error","message":"The engine is currently overloaded"}}"#;
+    let fetch = ScriptedFetch::new(&[(429, &[("retry-after", "2")], body), (200, &[], "ok")]);
+    let notices = Arc::new(Mutex::new(Vec::new()));
+    let started = tokio::time::Instant::now();
+
+    let response = http_retry(&fetch, 3, Some(Arc::clone(&notices)))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status, 200);
+    assert_eq!(response.text().await.unwrap(), "ok");
+    assert_eq!(fetch.calls.load(Ordering::SeqCst), 2);
+    assert_eq!(started.elapsed(), std::time::Duration::from_secs(2));
+    assert_eq!(*notices.lock().unwrap(), vec![format!("429 {body}")]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn http_retry_returns_the_last_failure_with_its_body_once_the_budget_is_spent() {
+    let fetch = ScriptedFetch::new(&[(529, &[], "overloaded")]);
+
+    let response = http_retry(&fetch, 2, None).await.unwrap();
+
+    assert_eq!(response.status, 529);
+    assert_eq!(response.text().await.unwrap(), "overloaded");
+    assert_eq!(fetch.calls.load(Ordering::SeqCst), 3);
+}
+
+#[tokio::test(start_paused = true)]
+async fn http_retry_does_not_retry_client_errors_or_exhausted_quota() {
+    for (status, body) in [
+        (400, "bad request"),
+        (429, r#"{"error":{"type":"insufficient_quota"}}"#),
+    ] {
+        let fetch = ScriptedFetch::new(&[(status, &[], body), (200, &[], "ok")]);
+
+        let response = http_retry(&fetch, 3, None).await.unwrap();
+
+        assert_eq!(response.status, status);
+        assert_eq!(response.text().await.unwrap(), body);
+        assert_eq!(fetch.calls.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn http_retry_honors_x_should_retry() {
+    let fetch = ScriptedFetch::new(&[
+        (400, &[("x-should-retry", "true")], "retry me"),
+        (200, &[], "ok"),
+    ]);
+    assert_eq!(http_retry(&fetch, 1, None).await.unwrap().status, 200);
+
+    let fetch = ScriptedFetch::new(&[
+        (503, &[("x-should-retry", "false")], "stop"),
+        (200, &[], "ok"),
+    ]);
+    assert_eq!(http_retry(&fetch, 1, None).await.unwrap().status, 503);
 }
 
 #[test]

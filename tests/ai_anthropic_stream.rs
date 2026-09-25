@@ -230,6 +230,75 @@ async fn parses_minimal_stream_and_repairs_malformed_tool_json() {
     );
 }
 
+/// Fails the first request with an overloaded 529, then serves `body`.
+struct OverloadedOnceFetch {
+    body: String,
+    calls: std::sync::atomic::AtomicU32,
+}
+
+impl HttpFetch for OverloadedOnceFetch {
+    fn fetch<'a>(
+        &'a self,
+        _request: HttpRequest,
+    ) -> futures::future::BoxFuture<'a, Result<HttpResponse, HttpFetchError>> {
+        let first = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0;
+        let (status, body) = if first {
+            (
+                529,
+                r#"{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"#
+                    .to_string(),
+            )
+        } else {
+            (200, self.body.clone())
+        };
+        Box::pin(async move {
+            Ok(HttpResponse {
+                status,
+                headers: vec![("retry-after-ms".to_string(), "0".to_string())],
+                body: Box::pin(futures::stream::iter(vec![Ok(bytes::Bytes::from(body))])),
+            })
+        })
+    }
+}
+
+#[tokio::test]
+async fn retries_an_overloaded_response_before_streaming() {
+    let fetch = Arc::new(OverloadedOnceFetch {
+        body: create_sse_response(&minimal_anthropic_events()),
+        calls: std::sync::atomic::AtomicU32::new(0),
+    });
+    let mut options = AnthropicOptions {
+        base: pi_core::ai::types::StreamOptions {
+            base: pi_core::ai::types::ProviderRequestOptions {
+                api_key: Some("sk-ant-test".to_string()),
+                fetch: Some(fetch.clone()),
+                max_retries: Some(1),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let result = stream(&model(), &context(), Some(&options)).result().await;
+
+    assert_eq!(result.stop_reason, StopReason::Stop);
+    assert!(result.error_message.is_none());
+    assert_eq!(fetch.calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+
+    // Without a retry budget the 529 still surfaces with its body.
+    fetch.calls.store(0, std::sync::atomic::Ordering::SeqCst);
+    options.base.base.max_retries = None;
+    let result = stream(&model(), &context(), Some(&options)).result().await;
+    assert_eq!(result.stop_reason, StopReason::Error);
+    let message = result.error_message.unwrap();
+    assert!(
+        message.starts_with("Anthropic API error (529)"),
+        "{message}"
+    );
+    assert!(message.contains("overloaded_error"), "{message}");
+}
+
 #[tokio::test]
 async fn preserves_content_from_content_block_start_events() {
     let events = vec![

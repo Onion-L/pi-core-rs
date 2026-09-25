@@ -127,6 +127,12 @@ fn retryable_provider_error_pattern() -> &'static Regex {
     })
 }
 
+/// Whether provider error text reports quota/budget/billing exhaustion,
+/// which no retry can fix.
+pub(crate) fn is_provider_limit_error(text: &str) -> bool {
+    non_retryable_provider_limit_error_pattern().is_match(text)
+}
+
 /// Port of `isRetryableAssistantError`.
 pub fn is_retryable_assistant_error(message: &AssistantMessage) -> bool {
     if message.stop_reason != StopReason::Error {

@@ -8,7 +8,6 @@
 //! model.compat overrides merge exactly like the TypeScript helpers.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
 
 use serde_json::{Map, Value, json};
 
@@ -40,7 +39,7 @@ use crate::ai::utils::event_stream::{
 use crate::ai::utils::http::{HttpBody, HttpMethod, HttpRequest};
 use crate::ai::utils::json_parse::parse_streaming_json;
 use crate::ai::utils::provider_env::get_provider_env_value;
-use crate::ai::utils::provider_retry::retry_provider_request;
+use crate::ai::utils::provider_retry::retry_http_request;
 use crate::ai::utils::reqwest_fetch::default_fetch;
 use crate::ai::utils::sanitize_unicode::sanitize_surrogates;
 use crate::ai::utils::text::short_hash;
@@ -1788,20 +1787,9 @@ async fn request_completions(
         body: HttpBody::Json(params),
     };
 
-    retry_provider_request(
-        || {
-            let fetch = Arc::clone(&fetch);
-            let request = request.clone();
-            async move {
-                fetch.fetch(request).await.map_err(|error| {
-                    crate::ai::utils::provider_retry::ProviderHttpError::new(
-                        error.to_string(),
-                        None,
-                        Vec::new(),
-                    )
-                })
-            }
-        },
+    retry_http_request(
+        &fetch,
+        &request,
         crate::ai::utils::provider_retry::ProviderRetryOptions {
             max_retries: options.and_then(|options| options.base.base.max_retries),
             on_retry: options.and_then(|options| options.base.base.on_retry.clone()),

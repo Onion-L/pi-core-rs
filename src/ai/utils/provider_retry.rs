@@ -2,9 +2,12 @@
 //! behavior of the OpenAI and Anthropic SDKs while making the backoff sleep
 //! interruptible.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use tokio_util::sync::CancellationToken;
+
+use crate::ai::utils::http::{HttpFetch, HttpRequest, HttpResponse};
 
 /// Port of the SDK-shaped provider error: status, response headers, and
 /// message. Provider request layers construct this for HTTP failures.
@@ -13,6 +16,8 @@ pub struct ProviderHttpError {
     pub message: String,
     pub status: Option<u16>,
     pub headers: Vec<(String, String)>,
+    /// The response body of an HTTP failure; `None` for transport failures.
+    pub body: Option<String>,
 }
 
 impl ProviderHttpError {
@@ -25,6 +30,7 @@ impl ProviderHttpError {
             message: message.into(),
             status,
             headers,
+            body: None,
         }
     }
 
@@ -58,7 +64,16 @@ const DEFAULT_MAX_RETRY_DELAY_MS: u64 = 60_000;
 
 /// Mirrors the pinned OpenAI/Anthropic SDK retry policy; review when either
 /// SDK is upgraded.
+/// Quota/billing exhaustion (often sent as a 429) never retries: waiting
+/// does not refill a budget.
 fn is_retryable_provider_error(error: &ProviderHttpError) -> bool {
+    if error
+        .body
+        .as_deref()
+        .is_some_and(crate::ai::utils::retry::is_provider_limit_error)
+    {
+        return false;
+    }
     match error.header("x-should-retry") {
         Some("true") => return true,
         Some("false") => return false,
@@ -194,6 +209,69 @@ where
         }
 
         abortable_sleep_provider(delay_ms.max(0.0) as u64, options.signal.as_ref()).await?;
+    }
+}
+
+/// Sends `request` through [`retry_provider_request`] with SDK semantics: a
+/// non-2xx response is a failed attempt, classified by status,
+/// `x-should-retry`, `retry-after`, and body. The final response comes back
+/// as-is (a non-2xx one with its collected body re-attached), so each
+/// provider keeps its own error formatting; only transport failures, aborts,
+/// and over-cap server delays surface as `Err`.
+pub async fn retry_http_request(
+    fetch: &Arc<dyn HttpFetch>,
+    request: &HttpRequest,
+    options: ProviderRetryOptions,
+) -> Result<HttpResponse, ProviderHttpError> {
+    let result = retry_provider_request(
+        || {
+            let fetch = Arc::clone(fetch);
+            let request = request.clone();
+            async move {
+                let response = fetch
+                    .fetch(request)
+                    .await
+                    .map_err(|error| ProviderHttpError::new(error.to_string(), None, Vec::new()))?;
+                if (200..300).contains(&response.status) {
+                    return Ok(response);
+                }
+                let status = response.status;
+                let headers = response.headers.clone();
+                let body = crate::ai::utils::http::collect_text(response).await;
+                let excerpt = crate::ai::utils::error_body::truncate_error_text(
+                    body.trim(),
+                    crate::ai::utils::error_body::MAX_PROVIDER_ERROR_BODY_CHARS,
+                );
+                let message = if excerpt.is_empty() {
+                    format!("{status} status code")
+                } else {
+                    format!("{status} {excerpt}")
+                };
+                Err(ProviderHttpError {
+                    message,
+                    status: Some(status),
+                    headers,
+                    body: Some(body),
+                })
+            }
+        },
+        options,
+    )
+    .await;
+    match result {
+        Err(ProviderHttpError {
+            status: Some(status),
+            headers,
+            body,
+            ..
+        }) => Ok(HttpResponse {
+            status,
+            headers,
+            body: Box::pin(futures::stream::iter([Ok(bytes::Bytes::from(
+                body.unwrap_or_default(),
+            ))])),
+        }),
+        other => other,
     }
 }
 

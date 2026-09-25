@@ -6,7 +6,6 @@
 //! implementation (see [`openai_responses_shared`]).
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
 
 use serde_json::{Value, json};
 
@@ -34,7 +33,7 @@ use crate::ai::utils::event_stream::{
 };
 use crate::ai::utils::http::{HttpBody, HttpMethod, HttpRequest};
 use crate::ai::utils::provider_env::get_provider_env_value;
-use crate::ai::utils::provider_retry::retry_provider_request;
+use crate::ai::utils::provider_retry::retry_http_request;
 use crate::ai::utils::reqwest_fetch::default_fetch;
 
 /// Providers allowed to keep pipe-separated Responses tool-call ids on
@@ -535,20 +534,9 @@ async fn run_stream(
         body: HttpBody::Json(params),
     };
 
-    let response = retry_provider_request(
-        || {
-            let fetch = Arc::clone(&fetch);
-            let request = request.clone();
-            async move {
-                fetch.fetch(request).await.map_err(|error| {
-                    crate::ai::utils::provider_retry::ProviderHttpError::new(
-                        error.to_string(),
-                        None,
-                        Vec::new(),
-                    )
-                })
-            }
-        },
+    let response = retry_http_request(
+        &fetch,
+        &request,
         crate::ai::utils::provider_retry::ProviderRetryOptions {
             max_retries: options.and_then(|options| options.base.base.max_retries),
             on_retry: options.and_then(|options| options.base.base.on_retry.clone()),

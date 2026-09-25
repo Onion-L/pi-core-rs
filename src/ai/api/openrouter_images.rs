@@ -2,7 +2,6 @@
 //! the OpenRouter chat-completions endpoint with the `modalities` extension.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
 
 use serde_json::{Value, json};
 
@@ -14,9 +13,7 @@ use crate::ai::utils::error_body::{
     ProviderErrorParts, format_provider_error, normalize_provider_error,
 };
 use crate::ai::utils::http::{HttpBody, HttpRequest, collect_text};
-use crate::ai::utils::provider_retry::{
-    ProviderHttpError, ProviderRetryOptions, retry_provider_request,
-};
+use crate::ai::utils::provider_retry::{ProviderRetryOptions, retry_http_request};
 use crate::ai::utils::reqwest_fetch::default_fetch;
 use crate::ai::utils::sanitize_unicode::sanitize_surrogates;
 
@@ -92,17 +89,9 @@ async fn run_generation(
         signal: options.and_then(|options| options.signal.clone()),
     };
 
-    let response = retry_provider_request(
-        || {
-            let fetch = Arc::clone(&fetch);
-            let request = request.clone();
-            async move {
-                fetch
-                    .fetch(request)
-                    .await
-                    .map_err(|error| ProviderHttpError::new(error.to_string(), None, Vec::new()))
-            }
-        },
+    let response = retry_http_request(
+        &fetch,
+        &request,
         ProviderRetryOptions {
             max_retries: options.and_then(|options| options.max_retries),
             on_retry: options.and_then(|options| options.on_retry.clone()),

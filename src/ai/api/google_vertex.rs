@@ -8,7 +8,6 @@
 //! and requires the caller to supply credentials via the injectable
 //! transport or an express API key.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde_json::{Map, Value, json};
@@ -34,7 +33,7 @@ use crate::ai::utils::event_stream::{
 };
 use crate::ai::utils::http::{HttpBody, HttpMethod, HttpRequest};
 use crate::ai::utils::provider_env::get_provider_env_value;
-use crate::ai::utils::provider_retry::retry_provider_request;
+use crate::ai::utils::provider_retry::retry_http_request;
 use crate::ai::utils::reqwest_fetch::default_fetch;
 use crate::ai::utils::sanitize_unicode::sanitize_surrogates;
 
@@ -591,20 +590,9 @@ async fn run_stream(
     let fetch = transport
         .or_else(|| options.and_then(|options| options.base.base.fetch.clone()))
         .unwrap_or_else(default_fetch);
-    let response = retry_provider_request(
-        || {
-            let fetch = Arc::clone(&fetch);
-            let request = request.clone();
-            async move {
-                fetch.fetch(request).await.map_err(|error| {
-                    crate::ai::utils::provider_retry::ProviderHttpError::new(
-                        error.to_string(),
-                        None,
-                        Vec::new(),
-                    )
-                })
-            }
-        },
+    let response = retry_http_request(
+        &fetch,
+        &request,
         crate::ai::utils::provider_retry::ProviderRetryOptions {
             max_retries: options.and_then(|options| options.base.base.max_retries),
             on_retry: options.and_then(|options| options.base.base.on_retry.clone()),
